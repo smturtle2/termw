@@ -7,7 +7,6 @@ import { toColorFgbg } from "../shared/theme.js";
  * Theme drives COLORFGBG + THEME_* so PTY and any TUI (opencode) see luminance-consistent values.
  */
 export function buildPtyEnv(theme: Theme): Record<string, string> {
-  const isLight = theme.mode !== "dark";
   return {
     HOME: process.env.HOME || "/root",
     PATH: process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -24,7 +23,5 @@ export function buildPtyEnv(theme: Theme): Record<string, string> {
     THEME_MODE: theme.mode,
     THEME_BG: theme.background,
     THEME_FG: theme.foreground,
-    // keep light/dark fallback explicit for tools that only read bg/fg
-    ...(isLight ? {} : {}),
   };
 }

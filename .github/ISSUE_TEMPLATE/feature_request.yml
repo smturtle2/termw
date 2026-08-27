@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest an idea
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      placeholder: "What should termw do?"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      placeholder: "Any alternatives you considered?"
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      placeholder: "Why is this useful for a web terminal?"

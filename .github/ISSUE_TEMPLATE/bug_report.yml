@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a bug in termw
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      placeholder: "Korean IME duplicated ?, theme not syncing, etc."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduce
+      placeholder: |
+        1. cp config/theme.json.example config/theme.json
+        2. npm run dev
+        3. type `안녕` + `?`
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "Node 22, Zig 0.16.0, Chrome 126, Ubuntu 24.04"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Screenshot
+      render: shell

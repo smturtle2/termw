@@ -1,10 +1,31 @@
 {
   "name": "termw",
   "version": "0.1.0",
-  "description": "wterm-based web terminal — clean contract, Korean IME, theme-aware OSC",
+  "description": "Fast web terminal — WASM + Korean IME, theme-synced PTY",
   "type": "module",
   "private": false,
   "license": "Apache-2.0",
+  "author": "termw contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smturtle2/termw.git"
+  },
+  "homepage": "https://github.com/smturtle2/termw#readme",
+  "bugs": {
+    "url": "https://github.com/smturtle2/termw/issues"
+  },
+  "keywords": [
+    "terminal",
+    "web-terminal",
+    "wasm",
+    "zig",
+    "pty",
+    "korean",
+    "ime",
+    "xterm",
+    "node-pty",
+    "wterm"
+  ],
   "engines": {
     "node": ">=20.0.0"
   },

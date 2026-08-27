@@ -14,13 +14,7 @@ function projectRoot(): string {
 
 function candidatePaths(): string[] {
   const root = projectRoot();
-  return [
-    path.join(root, "config/theme.json"),
-    path.join(root, "theme.json"),
-    // legacy terminal path support when running from old cwd
-    path.join(process.cwd(), "config/theme.json"),
-    path.join(process.cwd(), "theme.json"),
-  ];
+  return [path.join(root, "config/theme.json"), path.join(root, "theme.json")];
 }
 
 export function getTheme(): Theme {

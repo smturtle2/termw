@@ -1,0 +1,8 @@
+node_modules
+dist
+public/app.js
+public/app.js.map
+public/wterm.wasm
+vendor
+zig-out
+.zig-cache

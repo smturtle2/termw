@@ -1,0 +1,6 @@
+*.wasm binary
+*.png binary
+*.gif binary
+public/app.js linguist-generated=true
+public/app.js.map linguist-generated=true
+vendor/wterm/packages/@wterm/core/wasm/wterm.wasm linguist-generated=true
