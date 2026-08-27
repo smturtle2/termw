@@ -26,6 +26,32 @@ function safeSend(ws: WS, data: string) {
   } catch {}
 }
 
+/** Standard OSC color query responder (OSC 10;?, 11;?, 4;<idx>;?).
+ * Any TUI may query terminal colors this way; answers are injected straight
+ * into the PTY from the server theme so apps never depend on a browser
+ * round trip (no timeout races). Queries split across output chunks are
+ * reassembled via a small tail buffer. Terminator (BEL/ST) is mirrored. */
+function scanOscQueries(chunk: string, tail: string): { replies: string; tail: string } {
+  tail = (tail + chunk).slice(-64);
+  const re = /\x1b\](10|11|4;\d+);\?(?=(\x07|\x1b\\))/g;
+  const theme = getTheme();
+  const bg = parseInt(theme.background.slice(1), 16);
+  const fg = parseInt(theme.foreground.slice(1), 16);
+  let replies = "";
+  let lastEnd = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(tail)) !== null) {
+    const kind = m[1];
+    const term = m[2];
+    const rgb = kind === "10" ? fg : bg;
+    const hex = (v: number) => ((v * 257).toString(16).padStart(4, "0"));
+    replies += `\x1b]${kind};rgb:${hex((rgb >> 16) & 0xff)}/${hex((rgb >> 8) & 0xff)}/${hex(rgb & 0xff)}${term}`;
+    lastEnd = m.index + m[0].length + term.length;
+  }
+  if (lastEnd > 0) tail = tail.slice(lastEnd);
+  return { replies, tail };
+}
+
 function spawn(ws: WS, c: number, r: number, opts: PtyOptions) {
   const sess = sessions.get(ws);
   if (!sess) return;
@@ -37,6 +63,7 @@ function spawn(ws: WS, c: number, r: number, opts: PtyOptions) {
     sess.timer = null;
   }
   const theme = getTheme();
+  let oscTail = "";
   try {
     const proc = Bun.spawn([opts.shell, "-l"], {
       cwd: opts.home,
@@ -47,6 +74,16 @@ function spawn(ws: WS, c: number, r: number, opts: PtyOptions) {
         data(_term, data) {
           // data is Uint8Array/Buffer
           const text = data instanceof Uint8Array ? new TextDecoder().decode(data) : String(data);
+          try {
+            const r2 = scanOscQueries(text, oscTail);
+            oscTail = r2.tail;
+            if (r2.replies && sess.proc) {
+              // @ts-ignore — terminal exists
+              sess.proc.terminal.write(r2.replies);
+            }
+          } catch (e) {
+            console.error("[termw] osc responder failed", e);
+          }
           safeSend(ws, text);
         },
       },
