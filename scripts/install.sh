@@ -124,6 +124,7 @@ ensure_bun() {
 
 ensure_bun
 export PATH="$HOME/.bun/bin:/root/.bun/bin:/usr/local/bin:$PATH"
+BUN_BIN="$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")"
 
 # --- fetch termw ---
 fetch_termw() {
@@ -205,8 +206,6 @@ else
   if ! command -v systemctl >/dev/null 2>&1; then
     warn "systemctl not found — skip systemd (run: bun dist/server/index.js)"
   else
-    # detect bun binary for ExecStart
-    BUN_BIN="$(command -v bun || echo "$HOME/.bun/bin/bun")"
     if [[ ! -x "$BUN_BIN" && -x "/usr/local/bin/bun" ]]; then BUN_BIN="/usr/local/bin/bun"; fi
     if [[ ! -x "$BUN_BIN" && -x "$HOME/.bun/bin/bun" ]]; then BUN_BIN="$HOME/.bun/bin/bun"; fi
 
