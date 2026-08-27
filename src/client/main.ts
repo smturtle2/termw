@@ -118,13 +118,15 @@ function renderTabBar() {
     item.appendChild(label);
     item.appendChild(close);
     // Tab items have fixed-width (rotated) labels; size the item to the
-    // actual text width so short titles don't leave huge padding. offsetWidth
-    // is the pre-rotation text width, already capped at 104px by max-width.
+    // actual text width so short titles don't leave huge padding. Must be
+    // measured AFTER appendChild — offsetWidth is 0 while detached from the
+    // document. offsetWidth is the pre-rotation text width, already capped
+    // at 104px by max-width.
+    tabListEl.appendChild(item);
     item.style.height = `${Math.max(label.offsetWidth + 36, 48)}px`;
     item.addEventListener("click", () => {
       if (t.id !== currentTabId) void selectTab(t.id);
     });
-    tabListEl.appendChild(item);
   });
 }
 
