@@ -9,7 +9,7 @@ Base commit: cdff1c0 (fix(dom): preserve fractional autoscroll)
 - Added `osc_terminated_by_st: bool`
 - `feed(0x1B)` in `osc_string` now sets `true` and returns `osc_dispatch`
 - `handleEscape ESC ']'` resets `false`, `handleOscString BEL` resets `false`
-- Why: OSC 10/11 replies must echo the terminator the client used (BEL vs ST `ESC \`). Needed for TUI luminance probes (opencode) that expect exact echo.
+- Why: OSC 10/11 replies must echo the terminator the client used (BEL vs ST `ESC \`). Needed for TUI luminance probes that expect exact echo.
 
 ## 2. `src/terminal.zig` — theme-aware OSC 10/11
 - Added fields `theme_bg: u32 = 0xffffff`, `theme_fg: u32 = 0x000000`, `setTheme(bg,fg)`

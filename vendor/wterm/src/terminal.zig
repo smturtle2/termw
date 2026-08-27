@@ -1148,7 +1148,7 @@ pub const Terminal = struct {
             self.enqueueResponse(resp);
             return;
         }
-        // OSC 4;idx;? query — opentui/opencode detectOSCSupport gate (needs at least 4;0;?)
+        // OSC 4;idx;? palette query — some TUIs gate luminance probes on a 4;0;? reply
         // Reply with theme_bg fallback for any idx so palette detection passes; real palette not stored.
         if (data.len >= 4 and data[0] == '4' and data[1] == ';') {
             // must end with ";?" to be a query

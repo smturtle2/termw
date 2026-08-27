@@ -26,12 +26,14 @@ async function fetchTheme(): Promise<Theme> {
 }
 
 function applyTheme(theme: Theme, wterm: WTerm) {
+  // palette class only supplies the 16-color table; bg/fg/cursor come from theme.json
   el.classList.remove("theme-korean-light", "theme-light", "theme-dark", "theme-solarized-dark", "theme-monokai");
-  if (luminance(theme.background) > 128) {
-    el.classList.add("theme-korean-light");
-  } else {
-    el.classList.add("theme-dark");
-  }
+  el.classList.add(luminance(theme.background) > 128 ? "theme-korean-light" : "theme-dark");
+  el.style.setProperty("--term-bg", theme.background);
+  el.style.setProperty("--term-fg", theme.foreground);
+  el.style.setProperty("--term-cursor", theme.foreground);
+  document.body.style.background = theme.background;
+  document.body.style.color = theme.foreground;
   try {
     const bg = parseInt(theme.background.replace("#", ""), 16);
     const fg = parseInt(theme.foreground.replace("#", ""), 16);

@@ -192,6 +192,29 @@
   --term-cursor: #000000;
 }
 
+/* Dark — VS Code default palette */
+.wterm.theme-dark {
+  --term-fg: #d4d4d4;
+  --term-bg: #1e1e1e;
+  --term-cursor: #aeafad;
+  --term-color-0: #1e1e1e;
+  --term-color-1: #f44747;
+  --term-color-2: #6a9955;
+  --term-color-3: #d7ba7d;
+  --term-color-4: #569cd6;
+  --term-color-5: #c586c0;
+  --term-color-6: #4ec9b0;
+  --term-color-7: #d4d4d4;
+  --term-color-8: #808080;
+  --term-color-9: #f44747;
+  --term-color-10: #6a9955;
+  --term-color-11: #d7ba7d;
+  --term-color-12: #569cd6;
+  --term-color-13: #c586c0;
+  --term-color-14: #4ec9b0;
+  --term-color-15: #ffffff;
+}
+
 /* Light */
 .wterm.theme-light {
   --term-fg: #383a42;

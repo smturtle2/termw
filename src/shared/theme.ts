@@ -10,11 +10,6 @@ export const DEFAULT_THEME: Theme = {
   foreground: "#000000",
 };
 
-export const DARK_FALLBACK: Theme = {
-  background: "#1e1e1e",
-  foreground: "#d4d4d4",
-};
-
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 export function isHexColor(s: string): boolean {
