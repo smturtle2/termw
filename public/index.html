@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>termw</title>
+  <link rel="stylesheet" href="/terminal.css">
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      background: #ffffff;
+      overflow: hidden;
+    }
+    #terminal {
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      padding: 8px;
+      border-radius: 0;
+      box-shadow: none;
+      --term-font-family: 'D2Coding', 'D2Coding ligature', 'Noto Sans Mono CJK KR', 'NanumGothicCoding', monospace;
+      --term-font-size: 15px;
+      --term-line-height: 1.2;
+      --term-row-height: 18px;
+    }
+    #terminal.wterm {
+      background: var(--term-bg, #ffffff);
+    }
+    @media (max-width: 768px) {
+      #terminal {
+        padding: 4px;
+        --term-font-size: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="terminal" class="wterm theme-korean-light" role="textbox" aria-label="Terminal" aria-multiline="true" aria-roledescription="terminal" tabindex="0"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

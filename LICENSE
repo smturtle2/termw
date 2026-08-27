@@ -1,0 +1,5 @@
+Apache License 2.0 — same as vercel-labs/wterm
+
+See https://github.com/vercel-labs/wterm/blob/main/LICENSE
+Vendored wterm sources in vendor/wterm/ retain their original Apache-2.0 headers.
+termw server/client code is also Apache-2.0 unless noted otherwise.
