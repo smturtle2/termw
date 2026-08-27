@@ -28,7 +28,6 @@
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/smturtle2/termw/main/scripts/install.sh | bash
-# options: bash install.sh -- --dir /opt/termw --port 3000 --no-systemd
 ```
 
 **Manual:**
