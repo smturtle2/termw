@@ -213,6 +213,13 @@ function setupTerm() {
   term = wterm;
   wterm.startResizeObserver((c, r) => send({ t: "resize", c, r }));
   wterm.measure();
+  // Re-measure once the web fonts finish loading — the first measurement may
+  // run against a fallback monospace and yield wrong cols/rows.
+  document.fonts?.ready
+    .then(() => {
+      if (term === wterm) sendResize(wterm);
+    })
+    .catch(() => {});
   connect();
   wterm.focus();
 }

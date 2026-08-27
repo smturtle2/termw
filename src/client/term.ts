@@ -21,7 +21,6 @@ export class TermView {
   element: HTMLElement;
   private grid: HTMLElement;
   private scrollbar: HTMLElement;
-  private scrollThumb: HTMLElement;
   private renderer: ViewRenderer;
   private input: InputCapture;
   private pointer: PointerCapture;
@@ -61,9 +60,6 @@ export class TermView {
 
     this.scrollbar = document.createElement("div");
     this.scrollbar.className = "term-scrollbar";
-    this.scrollThumb = document.createElement("div");
-    this.scrollThumb.className = "term-scrollbar-thumb";
-    this.scrollbar.appendChild(this.scrollThumb);
     element.appendChild(this.scrollbar);
 
     this.renderer = new ViewRenderer(this.grid);
@@ -235,38 +231,27 @@ export class TermView {
   }
 
   private setupScrollbar(): void {
-    const track = this.scrollbar;
-    const thumb = this.scrollThumb;
-    // Pointer events on the scrollbar must never reach the terminal's pointer
-    // capture (no SGR/selection); only the scroll intent below is emitted.
-    track.addEventListener("pointermove", (e) => e.stopPropagation());
-    track.addEventListener("pointerup", (e) => e.stopPropagation());
-    track.addEventListener("pointercancel", (e) => e.stopPropagation());
-    track.addEventListener("pointerdown", (e) => {
+    const sb = this.scrollbar;
+    // Scrollbar pointer events must never reach the terminal's pointer capture
+    // (no SGR/selection); only the scroll intent below is emitted. The element
+    // is pointer-events:none while hidden, so it only intercepts when shown.
+    sb.addEventListener("pointermove", (e) => e.stopPropagation());
+    sb.addEventListener("pointerup", (e) => e.stopPropagation());
+    sb.addEventListener("pointercancel", (e) => e.stopPropagation());
+    sb.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const thumbRect = thumb.getBoundingClientRect();
-      const trackRect = track.getBoundingClientRect();
-      const trackPx = trackRect.height - thumbRect.height;
+      const elRect = this.element.getBoundingClientRect();
+      const hPx = sb.getBoundingClientRect().height;
+      const trackPx = elRect.height - hPx;
       if (trackPx <= 0) return;
 
-      // Track click above/below the thumb pages the viewport.
-      const grabY = e.clientY - thumbRect.top;
-      if (grabY < 0) {
-        this.emit({ t: "scroll", d: this.rows });
-        return;
-      }
-      if (grabY > thumbRect.height) {
-        this.emit({ t: "scroll", d: -this.rows });
-        return;
-      }
-
-      thumb.classList.add("dragging");
+      sb.classList.add("dragging");
       const startClientY = e.clientY;
-      const startThumbTop = startClientY - trackRect.top - grabY;
+      const startThumbTop = sb.getBoundingClientRect().top - elRect.top;
       let lastTarget = this.viewportOffset;
       try {
-        track.setPointerCapture(e.pointerId);
+        sb.setPointerCapture(e.pointerId);
       } catch {}
       const move = (ev: PointerEvent) => {
         const frac = Math.max(
@@ -281,24 +266,26 @@ export class TermView {
         }
       };
       const up = () => {
-        thumb.classList.remove("dragging");
+        sb.classList.remove("dragging");
         try {
-          track.releasePointerCapture(e.pointerId);
+          sb.releasePointerCapture(e.pointerId);
         } catch {}
-        track.removeEventListener("pointermove", move);
-        track.removeEventListener("pointerup", up);
-        track.removeEventListener("pointercancel", up);
+        sb.removeEventListener("pointermove", move);
+        sb.removeEventListener("pointerup", up);
+        sb.removeEventListener("pointercancel", up);
       };
-      track.addEventListener("pointermove", move);
-      track.addEventListener("pointerup", up);
-      track.addEventListener("pointercancel", up);
+      sb.addEventListener("pointermove", move);
+      sb.addEventListener("pointerup", up);
+      sb.addEventListener("pointercancel", up);
     });
   }
 
   private updateScrollbar(): void {
     const total = this.scrollbackTotal + this.rows;
     const scrollable = total - this.rows;
-    const show = this.scrollbackTotal > 0;
+    // Indicator shows only while scrolled up, so it never overlays the active
+    // screen or steals pointer events from a running app.
+    const show = this.scrollbackTotal > 0 && this.viewportOffset > 0;
     if (!show) {
       this.scrollbar.classList.remove("visible");
       return;
@@ -308,8 +295,8 @@ export class TermView {
     // of scrollback. The thumb slides within the (100 - h)% track.
     const p = Math.max(0, Math.min(1, (scrollable - this.viewportOffset) / Math.max(1, scrollable)));
     const top = p * (100 - h);
-    this.scrollThumb.style.height = `${h}%`;
-    this.scrollThumb.style.top = `${top}%`;
+    this.scrollbar.style.height = `${h}%`;
+    this.scrollbar.style.top = `${top}%`;
     this.scrollbar.classList.add("visible");
   }
 

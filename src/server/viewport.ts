@@ -33,8 +33,10 @@ export class Viewport {
     this.forceFull = true;
   }
 
-  /** Scroll by a signed row delta; clamps to [0, scrollbackTotal]. */
+  /** Scroll by a signed row delta; clamps to [0, scrollbackTotal]. Full-screen
+   *  apps (alt screen) own their scroll, so the viewport must not move. */
   scrollBy(delta: number): void {
+    if (this.core.modes().usingAltScreen) return;
     const max = this.core.scrollbackCount();
     this.offset = Math.max(0, Math.min(max, this.offset + Math.round(delta)));
   }

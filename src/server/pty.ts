@@ -38,6 +38,7 @@ interface Session {
   syncHeld: boolean;
   syncTimer: ReturnType<typeof setTimeout> | null;
   lastTitle: string;
+  lastAltScreen: boolean;
 }
 
 const sessionsById = new Map<string, Session>();
@@ -167,6 +168,15 @@ function spawn(sess: Session, c: number, r: number, opts: PtyOptions) {
           const title = sess.core.takeTitle();
           if (title !== null && title !== sess.lastTitle) sendTitle(sess, title);
           const sync = sess.core.synchronizedOutput();
+          // A full-screen app (alt screen) must start at the viewport bottom:
+          // if the user had scrolled up, the TUI would otherwise render above
+          // stale shell lines (offset persists across the screen switch).
+          const altScreen = sess.core.modes().usingAltScreen;
+          if (altScreen && !sess.lastAltScreen) {
+            sess.viewport.scrollToBottom();
+            sess.viewport.forceFullFrame();
+          }
+          sess.lastAltScreen = altScreen;
           if (sync) {
             sess.syncHeld = true;
             if (sess.syncTimer) clearTimeout(sess.syncTimer);
@@ -220,6 +230,7 @@ async function createSession(id: string, opts: PtyOptions): Promise<Session> {
     syncHeld: false,
     syncTimer: null,
     lastTitle: "",
+    lastAltScreen: false,
   };
   applyThemeToCore(sess);
   sessionsById.set(id, sess);
