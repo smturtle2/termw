@@ -2,7 +2,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { getTheme, setTheme, themeFileInUse, watchTheme } from "./theme.js";
 import { validateTheme } from "../shared/theme.js";
-import { isWsPath, THEME_UPDATE_TYPE } from "../shared/protocol.js";
+import { isWsPath, isValidSessionId, THEME_UPDATE_TYPE } from "../shared/protocol.js";
 import { ptyClose, ptyMessage, ptyOpen } from "./pty.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -50,7 +50,7 @@ const themeWatcher = watchTheme(() => {
   broadcastTheme();
 });
 
-const server = Bun.serve({
+const server = Bun.serve<{ sid: string }>({
   hostname: HOST,
   port: PORT,
   async fetch(req, server) {
@@ -105,7 +105,11 @@ const server = Bun.serve({
     }
 
     if (isWsPath(pathname)) {
-      const ok = server.upgrade(req);
+      // ?id=<session id> selects which persistent session this socket
+      // attaches to. Missing/invalid ids fall back to the default session.
+      let sid = url.searchParams.get("id") ?? "main";
+      if (!isValidSessionId(sid)) sid = "main";
+      const ok = server.upgrade(req, { data: { sid } });
       if (ok) return undefined as unknown as Response;
       return new Response("WebSocket upgrade failed", { status: 500 });
     }
@@ -159,9 +163,15 @@ const server = Bun.serve({
     });
   },
   websocket: {
+    // Keep NAT/router mappings alive on mobile — without pings an idle
+    // background tab loses its WS within a minute or two. Long idle timeout
+    // so a phone that freezes the tab doesn't get its connection reaped.
+    sendPings: true,
+    idleTimeout: 600,
     open(ws) {
+      const sid = ws.data?.sid ?? "main";
       liveWS.add(ws as any);
-      ptyOpen(ws as any, { shell: SHELL, home: HOME });
+      ptyOpen(ws as any, sid, { shell: SHELL, home: HOME });
       // send current theme on connect so client can sync without fetch
       try {
         const theme = getTheme();
