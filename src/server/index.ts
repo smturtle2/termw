@@ -121,6 +121,30 @@ const server = Bun.serve({
       return new Response("Forbidden", { status: 403 });
     }
 
+    // HTML injection: embed theme sync before WASM init to avoid OSC race
+    if (normalized === "index.html") {
+      const file = Bun.file(abs);
+      const exists = await file.exists();
+      if (!exists) {
+        return new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain" } });
+      }
+      let html = await file.text();
+      try {
+        const theme = getTheme();
+        const inject = `<script id="termw-theme" type="application/json">${JSON.stringify(theme)}</script>`;
+        if (html.includes("</head>")) html = html.replace("</head>", `${inject}</head>`);
+        else html = inject + html;
+        return new Response(html, {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+          },
+        });
+      } catch {
+        // fallback to file
+      }
+    }
+
     const file = Bun.file(abs);
     const exists = await file.exists();
     if (!exists) {

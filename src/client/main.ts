@@ -6,6 +6,14 @@ const el = document.getElementById("terminal") as HTMLElement;
 let ws: WebSocket | null = null;
 let term: WTerm | null = null;
 
+function getSyncTheme(): Theme | null {
+  try {
+    const el = document.getElementById("termw-theme") as HTMLElement | null;
+    if (el && el.textContent) return normalizeTheme(JSON.parse(el.textContent));
+  } catch {}
+  return null;
+}
+
 async function fetchTheme(): Promise<Theme> {
   try {
     const r = await fetch("/theme.json", { cache: "no-store" });
@@ -36,7 +44,9 @@ function applyTheme(theme: Theme, wterm: WTerm) {
 }
 
 async function init() {
-  const theme = await fetchTheme();
+  // Prefer sync injected theme to avoid OSC race before WASM setThemeColors
+  const sync = getSyncTheme();
+  const theme = sync ?? await fetchTheme();
 
   const wterm = new WTerm(el, {
     cols: 80,
@@ -57,6 +67,7 @@ async function init() {
 
   await wterm.init();
   term = wterm;
+  // setThemeColors must complete before any PTY spawn/OSC query
   applyTheme(theme, wterm);
   wterm.focus();
   connect(wterm);
@@ -88,14 +99,7 @@ function connect(wterm: WTerm) {
       }
     } catch {}
     wterm.write(text);
-    // Drain OSC 10/11 replies (e.g., opencode queries both)
-    const bridge = (wterm as any).bridge as { getResponse?: () => string | null } | undefined;
-    if (bridge?.getResponse) {
-      let resp: string | null;
-      while ((resp = bridge.getResponse()) !== null) {
-        if (ws && ws.readyState === WebSocket.OPEN) ws.send(resp);
-      }
-    }
+    // wterm.write already drains OSC replies via onData(ws.send); no second drain needed
   };
 
   ws.onclose = () => {
