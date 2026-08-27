@@ -294,6 +294,22 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("click", () => term?.focus());
 
+// Tab shortcuts are owned by the app (like Konsole): intercept in the capture
+// phase so neither the browser (new tab / close tab) nor the shell (via
+// wterm's bubble-phase textarea handler) ever sees Ctrl+T / Ctrl+W.
+document.addEventListener(
+  "keydown",
+  (e) => {
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && /^[twTW]$/.test(e.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key.toLowerCase() === "t") createTab();
+      else closeTab(currentTabId);
+    }
+  },
+  true,
+);
+
 function setupThemeUI() {
   const btn = document.getElementById("theme-btn") as HTMLButtonElement | null;
   const dlg = document.getElementById("theme-dialog") as HTMLDialogElement | null;
