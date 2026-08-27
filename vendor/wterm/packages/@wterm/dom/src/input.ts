@@ -65,6 +65,7 @@ export class InputHandler {
   private _charWidth = 0;
   private _cursorObserver: MutationObserver;
   private _positionRaf: number | null = null;
+  private _suppressMouse = false;
 
   private _onKeyDown: (e: KeyboardEvent) => void;
   private _onPaste: (e: ClipboardEvent) => void;
@@ -78,6 +79,10 @@ export class InputHandler {
   private _onMouseMove: (e: MouseEvent) => void;
   private _onMouseUp: (e: MouseEvent) => void;
   private _onWheel: (e: WheelEvent) => void;
+  private _onElementMouseMove: (e: MouseEvent) => void;
+  private _onTouchStart: (e: TouchEvent) => void;
+  private _onTouchMove: (e: TouchEvent) => void;
+  private _onTouchEnd: (e: TouchEvent) => void;
 
   constructor(
     element: HTMLElement,
@@ -156,9 +161,26 @@ export class InputHandler {
       this.stopMouseCapture();
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[O");
     };
-    this._onMouseDown = (event) => this.handleMouse(event, "press");
+    this._onMouseDown = (event) => {
+      // Chrome synthesizes a mousedown after touch gestures — drop it so
+      // touch doesn't double-report press to the app (see _onTouchStart).
+      if (this._suppressMouse) {
+        this._suppressMouse = false;
+        return;
+      }
+      this.handleMouse(event, "press");
+    };
     this._onMouseMove = (event) => {
       if (this.mouseButtons !== 0) this.handleMouse(event, "move");
+    };
+    // 1003 (any-motion) needs move reports with no button held — element
+    // never had a mousemove listener for that; window capture only exists
+    // while dragging. Skip when a button is held (window path covers that).
+    this._onElementMouseMove = (event) => {
+      const tracking = this.getBridge()?.mouseTracking?.() ?? 0;
+      if (tracking === 1003 && this.mouseButtons === 0) {
+        this.handleMouse(event, "move");
+      }
     };
     this._onMouseUp = (event) => {
       if (this.mouseButtons === 0) return;
@@ -167,6 +189,9 @@ export class InputHandler {
       if (this.mouseButtons === 0) this.stopMouseCapture();
     };
     this._onWheel = (event) => this.handleMouse(event, "wheel");
+    this._onTouchStart = (event) => this.handleTouch(event, "press");
+    this._onTouchMove = (event) => this.handleTouch(event, "move");
+    this._onTouchEnd = (event) => this.handleTouch(event, "release");
 
     this.textarea.addEventListener("keydown", this._onKeyDown);
     this.textarea.addEventListener("paste", this._onPaste as EventListener);
@@ -186,7 +211,20 @@ export class InputHandler {
     this.textarea.addEventListener("focus", this._onFocus);
     this.textarea.addEventListener("blur", this._onBlur);
     this.element.addEventListener("mousedown", this._onMouseDown);
+    this.element.addEventListener("mousemove", this._onElementMouseMove);
     this.element.addEventListener("wheel", this._onWheel, { passive: false });
+    this.element.addEventListener("touchstart", this._onTouchStart, { passive: false });
+    this.element.addEventListener("touchmove", this._onTouchMove, { passive: false });
+    this.element.addEventListener("touchend", this._onTouchEnd, { passive: false });
+    // After a drag the browser moves focus to the (tabindex=0) terminal div,
+    // so keys would go nowhere. Forward them to the textarea instead.
+    this.element.addEventListener("keydown", (event) => {
+      if (this.element.ownerDocument.activeElement !== this.element) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.textarea.focus({ preventScroll: true });
+      this.textarea.dispatchEvent(new KeyboardEvent("keydown", event));
+    });
 
     // Coalesce renderer DOM mutations into one rAF tick
     this._cursorObserver = new MutationObserver(() => {
@@ -407,6 +445,35 @@ export class InputHandler {
     }
   }
 
+  private handleTouch(
+    event: TouchEvent,
+    kind: "press" | "move" | "release",
+  ): void {
+    const bridge = this.getBridge();
+    const tracking = bridge?.mouseTracking?.() ?? 0;
+    // Mouse reporting off → native touch scroll/selection stays untouched.
+    if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) return;
+    // Multi-touch (pinch etc.) belongs to the browser.
+    if (event.touches.length > 1) return;
+    const t = kind === "release" ? event.changedTouches[0] : event.touches[0];
+    if (!t) return;
+    // Suppress the synthetic mousedown Chrome fires after a touch gesture so
+    // the app doesn't get a duplicate press.
+    if (kind === "press") this._suppressMouse = true;
+    const fake = {
+      clientX: t.clientX,
+      clientY: t.clientY,
+      shiftKey: false,
+      altKey: false,
+      ctrlKey: false,
+      button: 0,
+      buttons: kind === "release" ? 0 : 1,
+      target: event.target,
+      preventDefault: () => event.preventDefault(),
+    } as unknown as MouseEvent;
+    this.handleMouse(fake, kind);
+  }
+
   private handleMouse(
     event: MouseEvent | WheelEvent,
     kind: "press" | "move" | "release" | "wheel",
@@ -428,7 +495,12 @@ export class InputHandler {
     if (kind === "press" && (event.shiftKey || event.button > 2)) return;
     if (kind === "release" && event.button > 2) return;
     const supportedButtons = event.buttons & 7;
-    if (kind === "move" && (tracking !== 1002 || supportedButtons === 0)) {
+    // 1003 (any-motion) reports moves even with no button held; 1002 only
+    // while a button is pressed.
+    if (
+      kind === "move" &&
+      (tracking === 1003 ? false : supportedButtons === 0)
+    ) {
       return;
     }
 

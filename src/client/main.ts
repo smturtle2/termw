@@ -1,8 +1,8 @@
-import { WTerm } from "@wterm/dom";
+import { TermView } from "./term.js";
+import { encodeClientEvent, type ClientEvent } from "../shared/protocol.js";
+import { isRenderFrame } from "../shared/frame.js";
 import { DEFAULT_THEME, luminance, normalizeTheme, type Theme } from "../shared/theme.js";
 import {
-  encodeResize,
-  encodeSessionDelete,
   THEME_UPDATE_TYPE,
   TITLE_UPDATE_TYPE,
 } from "../shared/protocol.js";
@@ -20,7 +20,7 @@ const TABS_KEY = "termw.tabs";
 const RECONNECT_MAX_DELAY = 30000;
 
 let ws: WebSocket | null = null;
-let term: WTerm | null = null;
+let term: TermView | null = null;
 let currentTabId: string | null = null;
 let currentTheme: Theme | null = null;
 let connecting = false;
@@ -34,7 +34,10 @@ function loadTabs(): TabMeta[] {
     if (!raw) return [];
     const j = JSON.parse(raw);
     if (!Array.isArray(j)) return [];
-    return j.filter((t) => t && typeof t.id === "string" && t.id.length >= 8 && t.id.length <= 64);
+    return j.filter(
+      (t) =>
+        t && typeof t.id === "string" && t.id.length >= 8 && t.id.length <= 64,
+    );
   } catch {
     return [];
   }
@@ -48,8 +51,8 @@ function saveTabs(tabs: TabMeta[]) {
 
 function getSyncTheme(): Theme | null {
   try {
-    const el = document.getElementById("termw-theme") as HTMLElement | null;
-    if (el && el.textContent) return normalizeTheme(JSON.parse(el.textContent));
+    const elt = document.getElementById("termw-theme") as HTMLElement | null;
+    if (elt && elt.textContent) return normalizeTheme(JSON.parse(elt.textContent));
   } catch {}
   return null;
 }
@@ -65,10 +68,17 @@ async function fetchTheme(): Promise<Theme> {
   }
 }
 
-function applyTheme(theme: Theme, wterm: WTerm) {
-  // palette class only supplies the 16-color table; bg/fg/cursor come from theme.json
-  el.classList.remove("theme-korean-light", "theme-light", "theme-dark", "theme-solarized-dark", "theme-monokai");
-  el.classList.add(luminance(theme.background) > 128 ? "theme-korean-light" : "theme-dark");
+function applyTheme(theme: Theme) {
+  el.classList.remove(
+    "theme-korean-light",
+    "theme-light",
+    "theme-dark",
+    "theme-solarized-dark",
+    "theme-monokai",
+  );
+  el.classList.add(
+    luminance(theme.background) > 128 ? "theme-korean-light" : "theme-dark",
+  );
   el.style.setProperty("--term-bg", theme.background);
   el.style.setProperty("--term-fg", theme.foreground);
   el.style.setProperty("--term-cursor", theme.foreground);
@@ -76,13 +86,10 @@ function applyTheme(theme: Theme, wterm: WTerm) {
   document.body.style.color = theme.foreground;
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", theme.background);
-  try {
-    const bg = parseInt(theme.background.replace("#", ""), 16);
-    const fg = parseInt(theme.foreground.replace("#", ""), 16);
-    (wterm as any).bridge?.setThemeColors?.(bg, fg);
-  } catch {}
-  // Force font stack (server default D2Coding)
-  el.style.setProperty("--term-font-family", "'D2Coding', 'D2Coding ligature', 'Noto Sans Mono CJK KR', 'NanumGothicCoding', monospace");
+  el.style.setProperty(
+    "--term-font-family",
+    "'D2Coding', 'D2Coding ligature', 'Noto Sans Mono CJK KR', 'NanumGothicCoding', monospace",
+  );
   el.style.setProperty("--term-font-size", "15px");
   el.style.setProperty("--term-line-height", "1.2");
 }
@@ -119,11 +126,6 @@ function renderTabBar() {
     });
     item.appendChild(label);
     item.appendChild(close);
-    // Tab items have fixed-width (rotated) labels; size the item to the
-    // actual text width so short titles don't leave huge padding. Must be
-    // measured AFTER appendChild — offsetWidth is 0 while detached from the
-    // document. offsetWidth is the pre-rotation text width, already capped
-    // at 104px by max-width.
     tabListEl.appendChild(item);
     item.style.height = `${Math.max(label.offsetWidth + 36, 48)}px`;
     item.addEventListener("click", () => {
@@ -145,11 +147,9 @@ function closeTab(id: string) {
   const tabs = loadTabs();
   const idx = tabs.findIndex((t) => t.id === id);
   if (idx === -1) return;
-  // ask server to tear the session down (fire-and-forget; frame is queued
-  // before close below)
   if (id === currentTabId && ws && ws.readyState === WebSocket.OPEN) {
     try {
-      ws.send(encodeSessionDelete(id));
+      ws.send(encodeClientEvent({ t: "del", id }));
     } catch {}
   }
   tabs.splice(idx, 1);
@@ -186,34 +186,32 @@ async function selectTab(id: string) {
   teardownConnection();
   currentTabId = id;
   renderTabBar();
-  await setupTerm();
+  setupTerm();
 }
 
-async function setupTerm() {
-  term?.destroy();
-  term = null;
-  const theme = currentTheme ?? DEFAULT_THEME;
-  const wterm = new WTerm(el, {
-    cols: 80,
-    rows: 24,
-    autoResize: true,
-    wasmUrl: "/wterm.wasm",
-    cursorBlink: true,
-    onData: (data: string) => {
-      if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
-    },
-    onTitle: (title: string) => {
-      updateTitle(title);
-    },
-    onResize: (cols: number, rows: number) => {
-      if (ws && ws.readyState === WebSocket.OPEN) ws.send(encodeResize(cols, rows));
-    },
-  });
+function send(ev: ClientEvent) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(encodeClientEvent(ev));
+    } catch {}
+  }
+}
 
-  await wterm.init();
+function sendResize(wterm: TermView) {
+  const m = wterm.measure();
+  if (m) send({ t: "resize", c: m.cols, r: m.rows });
+}
+
+function setupTerm() {
+  term?.dispose();
+  term = null;
+  const wterm = new TermView(el, {
+    emit: send,
+    onTitle: updateTitle,
+  });
   term = wterm;
-  // setThemeColors must complete before any PTY spawn/OSC query
-  applyTheme(theme, wterm);
+  wterm.startResizeObserver((c, r) => send({ t: "resize", c, r }));
+  wterm.measure();
   connect();
   wterm.focus();
 }
@@ -234,24 +232,27 @@ function connect() {
     connecting = false;
     reconnectDelay = 1000;
     if (ws === s) {
-      try {
-        s.send(encodeResize(wterm.cols, wterm.rows));
-      } catch {}
+      sendResize(wterm);
     }
   };
 
   s.onmessage = (event: MessageEvent) => {
     const data = event.data;
-    let text: string;
-    if (data instanceof ArrayBuffer) text = new TextDecoder().decode(new Uint8Array(data));
-    else if (data instanceof Uint8Array) text = new TextDecoder().decode(data);
-    else text = data as string;
+    if (data instanceof ArrayBuffer) {
+      wterm.applyFrame(new Uint8Array(data));
+      return;
+    }
+    if (data instanceof Uint8Array) {
+      if (isRenderFrame(data)) wterm.applyFrame(data);
+      return;
+    }
+    const text = data as string;
     try {
       const j = JSON.parse(text);
       if (j && j.type === THEME_UPDATE_TYPE && j.theme) {
         const t = normalizeTheme(j.theme);
         currentTheme = t;
-        applyTheme(t, wterm);
+        applyTheme(t);
         return;
       }
       if (j && j.type === TITLE_UPDATE_TYPE && typeof j.title === "string") {
@@ -259,15 +260,12 @@ function connect() {
         return;
       }
     } catch {}
-    wterm.write(text);
-    // wterm.write already drains OSC replies via onData(ws.send); no second drain needed
   };
 
   s.onclose = () => {
     connecting = false;
     if (ws === s) ws = null;
     if (!manualClose && currentTabId) {
-      wterm.write("\r\n\x1b[90m[연결 끊김 — 재연결 중...]\x1b[0m\r\n");
       scheduleReconnect();
     }
   };
@@ -300,15 +298,20 @@ document.addEventListener("visibilitychange", () => {
     reconnectNow();
   }
 });
-window.addEventListener("click", () => term?.focus());
 
 // Tab shortcuts are owned by the app (like Konsole): intercept in the capture
-// phase so neither the browser (new tab / close tab) nor the shell (via
-// wterm's bubble-phase textarea handler) ever sees Ctrl+T / Ctrl+W.
+// phase so neither the browser (new tab / close tab) nor the shell ever sees
+// Ctrl+T / Ctrl+W.
 document.addEventListener(
   "keydown",
   (e) => {
-    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && /^[twTW]$/.test(e.key)) {
+    if (
+      e.ctrlKey &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      /^[twTW]$/.test(e.key)
+    ) {
       e.preventDefault();
       e.stopPropagation();
       if (e.key.toLowerCase() === "t") createTab();
@@ -345,30 +348,46 @@ function setupThemeUI() {
   });
   preset.addEventListener("change", () => {
     const p = PRESETS[preset.value];
-    if (p) { bg.value = p.background; fg.value = p.foreground; }
+    if (p) {
+      bg.value = p.background;
+      fg.value = p.foreground;
+    }
   });
   cancel.addEventListener("click", () => dlg.close());
   apply.addEventListener("click", async () => {
     const theme = { background: bg.value, foreground: fg.value };
     try {
-      const r = await fetch("/api/theme", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(theme) });
+      const r = await fetch("/api/theme", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(theme),
+      });
       const j = await r.json();
       if (!r.ok) {
-        if (status) { status.style.color = "#c00"; status.textContent = (j.errors || ["failed"]).join("; "); }
+        if (status) {
+          status.style.color = "#c00";
+          status.textContent = (j.errors || ["failed"]).join("; ");
+        }
         return;
       }
-      if (term) applyTheme(j.theme, term);
-      if (status) { status.style.color = "#0a0"; status.textContent = "saved"; }
+      applyTheme(j.theme);
+      if (status) {
+        status.style.color = "#0a0";
+        status.textContent = "saved";
+      }
       setTimeout(() => dlg.close(), 400);
     } catch (e) {
-      if (status) { status.style.color = "#c00"; status.textContent = e instanceof Error ? e.message : String(e); }
+      if (status) {
+        status.style.color = "#c00";
+        status.textContent = e instanceof Error ? e.message : String(e);
+      }
     }
   });
 }
 
 async function init() {
-  // Prefer sync injected theme to avoid OSC race before WASM setThemeColors
   currentTheme = getSyncTheme() ?? (await fetchTheme());
+  applyTheme(currentTheme);
   tabNewEl.addEventListener("click", () => createTab());
   const tabs = loadTabs();
   if (tabs.length === 0) createTab();

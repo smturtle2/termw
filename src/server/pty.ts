@@ -1,5 +1,13 @@
 import type { ServerWebSocket } from "bun";
-import { decodeResize, decodeSessionDelete, TITLE_UPDATE_TYPE } from "../shared/protocol.js";
+import { TerminalCore } from "./core.js";
+import { Viewport } from "./viewport.js";
+import { keyToSequence } from "./keys.js";
+import { createPointerState, handlePointer } from "./pointer.js";
+import {
+  decodeClientEvent,
+  TITLE_UPDATE_TYPE,
+  type ClientEvent,
+} from "../shared/protocol.js";
 import { getTheme } from "./theme.js";
 import { buildPtyEnv } from "./env.js";
 
@@ -11,33 +19,31 @@ export interface PtyOptions {
 type WS = ServerWebSocket<unknown>;
 
 /** Detached sessions are killed after this idle time (default 24h). */
-const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS || "", 10) || 24 * 60 * 60 * 1000;
-/** Ring buffer cap for screen replay (scrollback included). */
-const MAX_BUFFER_BYTES = 2 * 1024 * 1024;
-/** Tail size for reassembling queries split across PTY chunks. */
-const SCAN_TAIL = 64;
-/** Tail size for OSC 0/2 titles (256 chars max). */
-const TITLE_TAIL = 320;
+const SESSION_TTL_MS =
+  parseInt(process.env.SESSION_TTL_MS || "", 10) || 24 * 60 * 60 * 1000;
+/** Fallback flush for synchronized-output frames held too long. */
+const SYNC_HOLD_MS = 250;
 
 interface Session {
   id: string;
+  core: TerminalCore;
+  viewport: Viewport;
+  pointer: ReturnType<typeof createPointerState>;
   proc: ReturnType<typeof Bun.spawn> | null;
   cols: number;
   rows: number;
   ws: WS | null;
-  attaching: boolean;
   timer: ReturnType<typeof setTimeout> | null;
   ttlTimer: ReturnType<typeof setTimeout> | null;
-  title: string;
-  oscTail: string;
-  titleTail: string;
-  buffer: { chunks: string[]; size: number };
+  syncHeld: boolean;
+  syncTimer: ReturnType<typeof setTimeout> | null;
+  lastTitle: string;
 }
 
 const sessionsById = new Map<string, Session>();
 const sessionIdByWs = new Map<WS, string>();
 
-function safeSend(ws: WS | null, data: string) {
+function safeSend(ws: WS | null, data: string | Uint8Array) {
   if (!ws) return;
   try {
     // @ts-ignore — bun ServerWebSocket has send
@@ -45,95 +51,48 @@ function safeSend(ws: WS | null, data: string) {
   } catch {}
 }
 
-/** Standard OSC color query responder (OSC 10;?, 11;?, 4;<idx>;?) + DSR (CSI 6n).
- * Any TUI may query terminal colors this way; answers are injected straight
- * into the PTY from the server theme so apps never depend on a browser
- * round trip (no timeout races). Queries split across output chunks are
- * reassembled via a small tail buffer. Terminator (BEL/ST) is mirrored.
- * Query sequences are stripped from the returned `toStore` text so a screen
- * replay never re-triggers responses in the client-side parser. */
-function scanAndStrip(
-  chunk: string,
-  tail: string,
-): { replies: string; toStore: string; tail: string } {
-  const combined = tail + chunk;
-  const tailLen = Math.min(SCAN_TAIL, combined.length);
+function sendFrame(sess: Session) {
+  if (!sess.ws) return;
+  safeSend(sess.ws, sess.viewport.buildFrame());
+}
+
+function sendTitle(sess: Session, title: string) {
+  sess.lastTitle = title;
+  if (sess.ws) {
+    safeSend(sess.ws, JSON.stringify({ type: TITLE_UPDATE_TYPE, title }));
+  }
+}
+
+function flushFrame(sess: Session) {
+  if (sess.syncHeld) {
+    if (sess.syncTimer) clearTimeout(sess.syncTimer);
+    sess.syncTimer = setTimeout(() => {
+      sess.syncTimer = null;
+      sendFrame(sess);
+    }, SYNC_HOLD_MS);
+    return;
+  }
+  sendFrame(sess);
+}
+
+function writePty(sess: Session, data: string) {
+  if (!sess.proc) return;
+  try {
+    // @ts-ignore — terminal exists
+    sess.proc.terminal.write(data);
+  } catch {}
+}
+
+function applyThemeToCore(sess: Session) {
   const theme = getTheme();
   const bg = parseInt(theme.background.slice(1), 16);
   const fg = parseInt(theme.foreground.slice(1), 16);
-  const hex = (v: number) => (v * 257).toString(16).padStart(4, "0");
-  let replies = "";
-  let clean = combined;
-  const oscRe = /\x1b\](10|11|4;\d+);\?(?=(\x07|\x1b\\))/g;
-  let m: RegExpExecArray | null;
-  while ((m = oscRe.exec(combined)) !== null) {
-    const kind = m[1];
-    const term = m[2];
-    const end = m.index + m[0].length + term.length;
-    const rgb = kind === "10" ? fg : bg;
-    replies += `\x1b]${kind};rgb:${hex((rgb >> 16) & 0xff)}/${hex((rgb >> 8) & 0xff)}/${hex(rgb & 0xff)}${term}`;
-    clean = clean.slice(0, m.index) + clean.slice(end);
-  }
-  const dsrRe = /\x1b\[6n/g;
-  while ((m = dsrRe.exec(combined)) !== null) {
-    clean = clean.slice(0, m.index) + clean.slice(m.index + m[0].length);
-  }
-  const toStore = clean.slice(0, Math.max(0, clean.length - tailLen));
-  return { replies, toStore, tail: combined.slice(-tailLen) };
+  sess.core.setThemeColors(bg, fg);
 }
 
-/** OSC 0/2 window title scanner. Reassembles across chunk splits. */
-function scanTitle(chunk: string, tail: string): { title: string | null; tail: string } {
-  const combined = tail + chunk;
-  const re = /\x1b\]([02]);([\s\S]*?)(?:\x07|\x1b\\)/g;
-  let title: string | null = null;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(combined)) !== null) {
-    title = m[2].slice(0, 256);
-  }
-  return { title, tail: combined.slice(-TITLE_TAIL) };
-}
-
-function bufferAppend(sess: Session, text: string) {
-  if (!text) return;
-  sess.buffer.chunks.push(text);
-  sess.buffer.size += text.length;
-  while (sess.buffer.size > MAX_BUFFER_BYTES && sess.buffer.chunks.length > 1) {
-    const head = sess.buffer.chunks.shift()!;
-    sess.buffer.size -= head.length;
-  }
-}
-
-function bufferDrain(sess: Session): string {
-  return sess.buffer.chunks.join("");
-}
-
-/** The OSC query scanner holds back the last ~64 bytes of every chunk as a
- * tail (for reassembling queries split across chunks) and those bytes are not
- * stored in the ring buffer. On detach they must be flushed, or the tail of
- * the screen (last typed chars, prompt) silently disappears from the replay.
- * Only query remnants are dropped: complete OSC 10/11/4 queries and DSR are
- * stripped (a replay must never re-trigger client responses), an incomplete
- * trailing OSC/DSR start is cut, and a bare ESC is dropped. Any other
- * complete escape sequence is kept so the replay reconstructs the screen. */
-function flushTail(sess: Session) {
-  const t = sess.oscTail;
-  if (!t) return;
-  sess.oscTail = "";
-  let clean = t
-    .replace(/\x1b\](10|11|4;\d+);\?(?:\x07|\x1b\\)/g, "")
-    .replace(/\x1b\[6n/g, "");
-  const oscIdx = clean.lastIndexOf("\x1b]");
-  if (oscIdx !== -1 && !/(?:\x07|\x1b\\)/.test(clean.slice(oscIdx))) {
-    clean = clean.slice(0, oscIdx);
-  }
-  const csiIdx = clean.lastIndexOf("\x1b[");
-  if (csiIdx !== -1) {
-    const rest = clean.slice(csiIdx + 2);
-    if (rest === "" || rest === "6" || rest === "6n") clean = clean.slice(0, csiIdx);
-  }
-  if (clean.endsWith("\x1b")) clean = clean.slice(0, -1);
-  if (clean) bufferAppend(sess, clean);
+/** Broadcast current theme to every live core (OSC color replies follow it). */
+export function applyThemeToSessions() {
+  for (const sess of sessionsById.values()) applyThemeToCore(sess);
 }
 
 function killSession(sess: Session, reason: string) {
@@ -153,6 +112,10 @@ function killSession(sess: Session, reason: string) {
   if (sess.ttlTimer) {
     clearTimeout(sess.ttlTimer);
     sess.ttlTimer = null;
+  }
+  if (sess.syncTimer) {
+    clearTimeout(sess.syncTimer);
+    sess.syncTimer = null;
   }
   if (sess.proc) {
     try {
@@ -174,40 +137,42 @@ function spawn(sess: Session, c: number, r: number, opts: PtyOptions) {
     clearTimeout(sess.timer);
     sess.timer = null;
   }
-  const theme = getTheme();
   const proc = Bun.spawn([opts.shell, "-l"], {
     cwd: opts.home,
-    env: buildPtyEnv(theme) as Record<string, string>,
+    env: buildPtyEnv(getTheme()) as Record<string, string>,
     terminal: {
       cols: c,
       rows: r,
       data(_term, data) {
-        const text =
-          data instanceof Uint8Array ? new TextDecoder().decode(data) : String(data);
         try {
-          const r2 = scanAndStrip(text, sess.oscTail);
-          sess.oscTail = r2.tail;
-          if (r2.replies && sess.proc) {
-            // @ts-ignore — terminal exists
-            sess.proc.terminal.write(r2.replies);
-          }
-          if (r2.toStore) bufferAppend(sess, r2.toStore);
-        } catch (e) {
-          console.error("[termw] osc responder failed", e);
-        }
-        try {
-          const t = scanTitle(text, sess.titleTail);
-          sess.titleTail = t.tail;
-          if (t.title !== null && t.title !== sess.title) {
-            sess.title = t.title;
-            if (sess.ws && !sess.attaching) {
-              safeSend(sess.ws, JSON.stringify({ type: TITLE_UPDATE_TYPE, title: t.title }));
+          const bytes =
+            data instanceof Uint8Array
+              ? data
+              : new TextEncoder().encode(String(data));
+          sess.core.write(bytes);
+          const responses = sess.core.drainResponses();
+          if (responses) writePty(sess, responses);
+          const title = sess.core.takeTitle();
+          if (title !== null && title !== sess.lastTitle) sendTitle(sess, title);
+          const sync = sess.core.synchronizedOutput();
+          if (sync) {
+            sess.syncHeld = true;
+            if (sess.syncTimer) clearTimeout(sess.syncTimer);
+            sess.syncTimer = setTimeout(() => {
+              sess.syncTimer = null;
+              sendFrame(sess);
+            }, SYNC_HOLD_MS);
+          } else {
+            if (sess.syncHeld) {
+              sess.syncHeld = false;
+              if (sess.syncTimer) clearTimeout(sess.syncTimer);
+              sess.syncTimer = null;
             }
+            sendFrame(sess);
           }
         } catch (e) {
-          console.error("[termw] title scan failed", e);
+          console.error("[termw] emulator feed failed", e);
         }
-        if (sess.ws && !sess.attaching) safeSend(sess.ws, text);
       },
     },
   }) as ReturnType<typeof Bun.spawn>;
@@ -226,20 +191,24 @@ function spawn(sess: Session, c: number, r: number, opts: PtyOptions) {
     });
 }
 
-function createSession(id: string, opts: PtyOptions): Session {
+async function createSession(id: string, opts: PtyOptions): Promise<Session> {
+  const core = await TerminalCore.create();
+  core.init(80, 24);
+  applyThemeToCore({ core } as Session);
   const sess: Session = {
     id,
+    core,
+    viewport: new Viewport(core),
+    pointer: createPointerState(),
     proc: null,
     cols: 80,
     rows: 24,
     ws: null,
-    attaching: false,
     timer: null,
     ttlTimer: null,
-    title: "",
-    oscTail: "",
-    titleTail: "",
-    buffer: { chunks: [], size: 0 },
+    syncHeld: false,
+    syncTimer: null,
+    lastTitle: "",
   };
   sessionsById.set(id, sess);
   sess.timer = setTimeout(() => {
@@ -251,7 +220,7 @@ function createSession(id: string, opts: PtyOptions): Session {
   return sess;
 }
 
-function attach(ws: WS, sess: Session, opts: PtyOptions) {
+async function attach(ws: WS, sess: Session, opts: PtyOptions) {
   const prevWs = sess.ws;
   if (prevWs && prevWs !== ws) {
     try {
@@ -272,28 +241,21 @@ function attach(ws: WS, sess: Session, opts: PtyOptions) {
         spawn(sess, sess.cols, sess.rows, opts);
       }
     }, 5000);
+    // Client will send resize; until then no screen exists.
     return;
   }
-  // Re-attach: replay ring buffer first (fresh client parser is empty), then
-  // let live output flow. `attaching` keeps new PTY output out of the socket
-  // until the replay is fully queued, preserving byte order.
-  flushTail(sess);
-  sess.attaching = true;
-  const replay = bufferDrain(sess);
-  if (replay) safeSend(ws, replay);
-  sess.attaching = false;
-  try {
-    // @ts-ignore — terminal exists
-    sess.proc.terminal.resize(sess.cols, sess.rows);
-  } catch {}
-  if (sess.title) {
-    safeSend(ws, JSON.stringify({ type: TITLE_UPDATE_TYPE, title: sess.title }));
+  // Reconnect: the emulator and its scrollback live server-side, so the fresh
+  // client gets the current viewport in one full frame.
+  sess.viewport.forceFullFrame();
+  sendFrame(sess);
+  if (sess.lastTitle) {
+    safeSend(ws, JSON.stringify({ type: TITLE_UPDATE_TYPE, title: sess.lastTitle }));
   }
 }
 
-export function ptyOpen(ws: WS, id: string, opts: PtyOptions) {
+export async function ptyOpen(ws: WS, id: string, opts: PtyOptions) {
   let sess = sessionsById.get(id);
-  if (!sess) sess = createSession(id, opts);
+  if (!sess) sess = await createSession(id, opts);
   attach(ws, sess, opts);
 }
 
@@ -302,45 +264,83 @@ export function ptyMessage(ws: WS, raw: string | Buffer | Uint8Array, opts: PtyO
   if (!id) return;
   const sess = sessionsById.get(id);
   if (!sess) return;
-  const input = typeof raw === "string" ? raw : new TextDecoder().decode(raw as Uint8Array);
 
-  const delId = decodeSessionDelete(input);
-  if (delId) {
-    const target = sessionsById.get(delId);
-    if (target) killSession(target, "client delete");
-    return;
-  }
-
-  const resized = decodeResize(input);
-  if (resized) {
-    sess.cols = resized.cols;
-    sess.rows = resized.rows;
-    if (!sess.proc) spawn(sess, resized.cols, resized.rows, opts);
-    else {
-      try {
-        // @ts-ignore — terminal exists
-        sess.proc.terminal.resize(resized.cols, resized.rows);
-      } catch (e) {
-        console.error("[termw] resize failed", e);
-      }
+  if (typeof raw === "string") {
+    const ev = decodeClientEvent(raw);
+    if (ev) {
+      handleEvent(sess, ev, opts);
+      return;
     }
-    return;
   }
-
+  // Legacy binary input (deprecated) — treat as raw PTY bytes.
   if (sess.proc) {
     try {
       // @ts-ignore
-      sess.proc.terminal.write(input);
-    } catch (e) {
-      console.error("[termw] write failed", e);
+      sess.proc.terminal.write(raw as unknown as string);
+    } catch {}
+  }
+}
+
+function handleEvent(sess: Session, ev: ClientEvent, opts: PtyOptions) {
+  switch (ev.t) {
+    case "key": {
+      const seq = keyToSequence(ev, sess.core.modes());
+      if (seq) writePty(sess, seq);
+      return;
     }
-  } else {
-    spawn(sess, sess.cols, sess.rows, opts);
-    if (sess.proc) {
-      try {
-        // @ts-ignore
-        sess.proc.terminal.write(input);
-      } catch {}
+    case "text": {
+      if (ev.s) writePty(sess, ev.s);
+      return;
+    }
+    case "paste": {
+      const modes = sess.core.modes();
+      const safe = ev.s.replace(/\x1b/g, "");
+      writePty(sess, modes.bracketedPaste ? `\x1b[200~${safe}\x1b[201~` : safe);
+      return;
+    }
+    case "ptr": {
+      const modes = sess.core.modes();
+      const { input, scrolled } = handlePointer(
+        ev,
+        modes,
+        sess.viewport,
+        sess.pointer,
+      );
+      if (input) writePty(sess, input);
+      if (scrolled) flushFrame(sess);
+      return;
+    }
+    case "focus": {
+      const modes = sess.core.modes();
+      if (modes.focusEvents) writePty(sess, ev.v ? "\x1b[I" : "\x1b[O");
+      return;
+    }
+    case "scroll": {
+      sess.viewport.scrollBy(ev.d);
+      flushFrame(sess);
+      return;
+    }
+    case "resize": {
+      if (ev.c <= 0 || ev.r <= 0 || ev.c > 1024 || ev.r > 1024) return;
+      sess.cols = ev.c;
+      sess.rows = ev.r;
+      sess.core.resize(ev.c, ev.r);
+      if (!sess.proc) {
+        spawn(sess, ev.c, ev.r, opts);
+      } else {
+        try {
+          // @ts-ignore — terminal exists
+          sess.proc.terminal.resize(ev.c, ev.r);
+        } catch {}
+      }
+      sess.viewport.forceFullFrame();
+      flushFrame(sess);
+      return;
+    }
+    case "del": {
+      const target = sessionsById.get(ev.id);
+      if (target) killSession(target, "client delete");
+      return;
     }
   }
 }
@@ -355,11 +355,8 @@ export function ptyClose(ws: WS) {
     clearTimeout(sess.timer);
     sess.timer = null;
   }
-  // Detach: keep the PTY and its ring buffer alive so a reconnect (or another
-  // device) re-attaches to the same session. Start the idle TTL.
-  flushTail(sess);
+  // Detach: keep the PTY + emulator + scrollback alive server-side.
   sess.ws = null;
-  sess.attaching = false;
   if (sess.proc) {
     if (sess.ttlTimer) clearTimeout(sess.ttlTimer);
     sess.ttlTimer = setTimeout(() => {
@@ -375,7 +372,7 @@ export function listSessions(): string[] {
   return [...sessionsById.keys()];
 }
 
-// Legacy wrapper — keep for compat if called via ws event emitter (unused with Bun.serve)
-export function handlePtyConnection(_ws: unknown, _opts: PtyOptions) {
-  console.warn("[termw] handlePtyConnection is deprecated — use ptyOpen/ptyMessage/ptyClose with Bun.serve");
+export function applyThemeToSession(id: string) {
+  const sess = sessionsById.get(id);
+  if (sess) applyThemeToCore(sess);
 }

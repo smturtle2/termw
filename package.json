@@ -33,7 +33,7 @@
   "trustedDependencies": ["esbuild"],
   "scripts": {
     "build": "bun run build:wasm && bun run build:client && bun run build:server",
-    "build:client": "esbuild src/client/main.ts --bundle --format=esm --target=es2022 --outfile=public/app.js --loader:.css=text --alias:@wterm/core=./vendor/wterm/packages/@wterm/core/src/index.ts --alias:@wterm/dom=./vendor/wterm/packages/@wterm/dom/src/index.ts --sourcemap --log-level=info",
+    "build:client": "esbuild src/client/main.ts --bundle --format=esm --target=es2022 --outfile=public/app.js --sourcemap --log-level=info",
     "build:server": "tsc -p tsconfig.server.json",
     "build:wasm": "bash scripts/build-wasm.sh",
     "build:wasm:force": "bash scripts/build-wasm.sh --force",

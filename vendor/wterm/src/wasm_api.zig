@@ -99,6 +99,7 @@ export fn getMouseTracking() u32 {
     return terminal.mouse_tracking;
 }
 
+
 export fn getMouseSgr() u32 {
     return if (terminal.mouse_sgr) 1 else 0;
 }

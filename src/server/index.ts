@@ -3,7 +3,7 @@ import { fileURLToPath } from "url";
 import { getTheme, setTheme, themeFileInUse, watchTheme } from "./theme.js";
 import { validateTheme } from "../shared/theme.js";
 import { isWsPath, isValidSessionId, THEME_UPDATE_TYPE } from "../shared/protocol.js";
-import { ptyClose, ptyMessage, ptyOpen } from "./pty.js";
+import { ptyClose, ptyMessage, ptyOpen, applyThemeToSessions } from "./pty.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +48,7 @@ function broadcastTheme() {
 // watch theme file for external edits (echo > config/theme.json)
 const themeWatcher = watchTheme(() => {
   broadcastTheme();
+  applyThemeToSessions();
 });
 
 const server = Bun.serve<{ sid: string }>({
@@ -123,6 +124,7 @@ const server = Bun.serve<{ sid: string }>({
           for (const ws of liveWS) {
             try { ws.send(payload); } catch {}
           }
+          applyThemeToSessions();
           return new Response(JSON.stringify({ ok: true, theme: v.theme, file }), {
             headers: { "Content-Type": "application/json; charset=utf-8" },
           });
@@ -203,7 +205,7 @@ const server = Bun.serve<{ sid: string }>({
     open(ws) {
       const sid = ws.data?.sid ?? "main";
       liveWS.add(ws as any);
-      ptyOpen(ws as any, sid, { shell: SHELL, home: HOME });
+      void ptyOpen(ws as any, sid, { shell: SHELL, home: HOME });
       // send current theme on connect so client can sync without fetch
       try {
         const theme = getTheme();

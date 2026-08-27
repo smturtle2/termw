@@ -721,6 +721,7 @@ pub const Terminal = struct {
                 47 => self.switchScreen(enabled, false),
                 1000 => self.setMouseTracking(1000, enabled),
                 1002 => self.setMouseTracking(1002, enabled),
+                1003 => self.setMouseTracking(1003, enabled), // any-motion (opencode)
                 1004 => self.focus_events = enabled,
                 1006 => self.mouse_sgr = enabled,
                 1047 => self.switchScreen(enabled, false),

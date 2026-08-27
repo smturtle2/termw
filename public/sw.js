@@ -1,9 +1,9 @@
 // termw service worker — network-first so the running build is always
 // the freshest one; the cache only serves as an offline fallback.
 // Bump VERSION after build-touching changes to evict old caches.
-const VERSION = "1.0.0";
+const VERSION = "1.2.0";
 const CACHE = `termw-${VERSION}`;
-const SHELL = ["/", "/app.js", "/wterm.wasm", "/manifest.json", "/theme.json"];
+const SHELL = ["/", "/app.js", "/manifest.json", "/theme.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

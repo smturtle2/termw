@@ -118,6 +118,9 @@ function safeLinkHref(uri: string | undefined): string | undefined {
   }
 }
 
+// Auto-link plain text URLs (no OSC 8) so they are clickable.
+const AUTO_URL_RE = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/g;
+
 function linkIdentity(cell: CellData): string {
   if (!cell.linkUri) return "";
   return cell.linkKey ?? `fallback\0${cell.linkId ?? ""}\0${cell.linkUri}`;
@@ -317,7 +320,7 @@ export class Renderer {
       if (nextLinkKey !== outputLinkKey) {
         if (outputLinkKey) html += "</a>";
         if (nextLinkKey) {
-          html += `<a class="term-link" href="${escapeHTML(href!)}" target="_blank" rel="noopener noreferrer">`;
+          html += `<a class="term-link" href="${escapeHTML(href!)}" target="_blank" rel="noopener noreferrer" draggable="false">`;
         }
         outputLinkKey = nextLinkKey;
       }
@@ -348,12 +351,40 @@ export class Renderer {
             ? `<span style="${runStyle}">${escapeHTML(after)}</span>`
             : `<span>${escapeHTML(after)}</span>`;
         }
+        appendContent(content, runLinkKey, runLinkUri);
+      } else if (!runLinkUri && AUTO_URL_RE.test(runText)) {
+        // No OSC 8 link on this run — auto-link plain http(s)/www URLs so
+        // they are clickable (plain click opens, see _onClickFocus).
+        AUTO_URL_RE.lastIndex = 0;
+        let last = 0;
+        let m: RegExpExecArray | null;
+        while ((m = AUTO_URL_RE.exec(runText))) {
+          if (m.index > last) {
+            const plain = runText.slice(last, m.index);
+            html += runStyle
+              ? `<span style="${runStyle}">${escapeHTML(plain)}</span>`
+              : `<span>${escapeHTML(plain)}</span>`;
+          }
+          const raw = m[0];
+          const clean = raw.replace(/[.,;:!?)\]]+$/, "");
+          const href = /^https?:\/\//i.test(clean) ? clean : `https://${clean}`;
+          html += `<a class="term-link term-auto" href="${escapeHTML(href)}" target="_blank" rel="noopener noreferrer" draggable="false">${
+            runStyle ? `<span style="${runStyle}">${escapeHTML(clean)}</span>` : `<span>${escapeHTML(clean)}</span>`
+          }</a>`;
+          last = m.index + raw.length;
+        }
+        if (last < runText.length) {
+          const tail = runText.slice(last);
+          html += runStyle
+            ? `<span style="${runStyle}">${escapeHTML(tail)}</span>`
+            : `<span>${escapeHTML(tail)}</span>`;
+        }
       } else {
         content += runStyle
           ? `<span style="${runStyle}">${escaped}</span>`
           : `<span>${escaped}</span>`;
+        appendContent(content, runLinkKey, runLinkUri);
       }
-      appendContent(content, runLinkKey, runLinkUri);
       runText = "";
       runCells = [];
     };

@@ -54,6 +54,9 @@ export class WTerm {
   private _onScroll: () => void;
   private _onModifierChange: (event: KeyboardEvent) => void;
   private _onWindowBlur: () => void;
+  private _onMouseDownPos: (event: MouseEvent) => void;
+  private _mouseDownX: number | null = null;
+  private _mouseDownY: number | null = null;
 
   onData: ((data: string) => void) | null;
   onTitle: ((title: string) => void) | null;
@@ -81,23 +84,28 @@ export class WTerm {
     if (options.cursorBlink) this.element.classList.add("cursor-blink");
 
     this._onClickFocus = (event) => {
+      const moved =
+        this._mouseDownX !== null &&
+        this._mouseDownY !== null &&
+        Math.hypot(
+          event.clientX - this._mouseDownX,
+          event.clientY - this._mouseDownY,
+        ) > 4;
+      if (moved) return;
       const target = event.target;
       if (target instanceof Element && target.closest(".term-link")) {
-        if (
-          isLinkActivationModifier(
-            event,
-            this.element.ownerDocument.defaultView?.navigator ?? navigator,
-          ) ||
-          event.detail === 0
-        ) {
-          return;
-        }
-        event.preventDefault();
+        // Plain click opens the link (mobile has no Ctrl/Cmd modifier).
+        return;
       }
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) this.input?.focus();
     };
+    this._onMouseDownPos = (event) => {
+      this._mouseDownX = event.clientX;
+      this._mouseDownY = event.clientY;
+    };
     this.element.addEventListener("click", this._onClickFocus);
+    this.element.addEventListener("mousedown", this._onMouseDownPos);
     this._onModifierChange = (event) => {
       this.element.classList.toggle(
         "link-modifier-active",
@@ -151,6 +159,28 @@ export class WTerm {
         this.bridge = await WasmBridge.load(this.wasmUrl);
       }
       if (this._destroyed) return this;
+      // Size the core to the actual container before init so the PTY spawns
+      // with the right cols/rows — otherwise the first prompt is drawn at
+      // 80x24 and wraps wrongly on narrow (mobile) screens.
+      if (this.autoResize) {
+        const m = this._measureCharSize();
+        if (m) {
+          const style = getComputedStyle(this.element);
+          const rect = this.element.getBoundingClientRect();
+          const width =
+            rect.width -
+            (parseFloat(style.paddingLeft) || 0) -
+            (parseFloat(style.paddingRight) || 0);
+          const height =
+            rect.height -
+            (parseFloat(style.paddingTop) || 0) -
+            (parseFloat(style.paddingBottom) || 0);
+          if (width > 0 && height > 0) {
+            this.cols = Math.max(1, Math.floor(width / m.charWidth));
+            this.rows = Math.max(1, Math.floor(height / m.rowHeight));
+          }
+        }
+      }
       this.bridge.init(this.cols, this.rows);
 
       if (this._debugEnabled) {

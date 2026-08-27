@@ -1,50 +1,137 @@
-/** Wire contract between client and server over WebSocket (text frames, UTF-8). */
+/** Wire contract between client and server over WebSocket. */
 
-/** Client → Server: resize. Client sends "\x1b[RESIZE:cols;rows]" as single text frame. */
-export const RESIZE_PREFIX = "\x1b[RESIZE:";
-export const RESIZE_RE = /\[RESIZE:(\d+);(\d+)\]/;
+/** Server → Client: live theme. JSON {type:"theme", theme:{background,foreground}} */
+export const THEME_UPDATE_TYPE = "theme";
+/** Server → Client: session title (from OSC 0/2). JSON {type:"title", title} */
+export const TITLE_UPDATE_TYPE = "title";
 
-export function encodeResize(cols: number, rows: number): string {
-  return `\x1b[RESIZE:${cols};${rows}]`;
+/** Endpoints that upgrade to WS. */
+export const WS_PATHS = ["/ws", "/api/terminal", "/ws/terminal"] as const;
+export function isWsPath(pathname: string): boolean {
+  return (WS_PATHS as readonly string[]).includes(pathname);
 }
 
-export function decodeResize(msg: string): { cols: number; rows: number } | null {
-  if (!msg.startsWith(RESIZE_PREFIX)) return null;
-  const m = msg.match(RESIZE_RE);
-  if (!m) return null;
-  const cols = parseInt(m[1], 10);
-  const rows = parseInt(m[2], 10);
-  if (!Number.isFinite(cols) || !Number.isFinite(rows)) return null;
-  if (cols <= 0 || rows <= 0 || cols > 1024 || rows > 1024) return null;
-  return { cols, rows };
-}
-
-/** Client → Server: delete a session (tab closed). "\x1b[SESSION_DELETE:<id>]" */
-export const SESSION_DELETE_PREFIX = "\x1b[SESSION_DELETE:";
-export const SESSION_DELETE_RE = /\[SESSION_DELETE:([A-Za-z0-9-]{1,64})\]/;
 export const SESSION_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
-
-export function encodeSessionDelete(id: string): string {
-  return `${SESSION_DELETE_PREFIX}${id}]`;
-}
-
-export function decodeSessionDelete(msg: string): string | null {
-  if (!msg.startsWith(SESSION_DELETE_PREFIX)) return null;
-  const m = msg.match(SESSION_DELETE_RE);
-  return m ? m[1] : null;
-}
-
 export function isValidSessionId(id: string): boolean {
   return SESSION_ID_RE.test(id);
 }
 
-/** Server → Client: raw PTY bytes (including OSC responses). No framing. */
-/** Theme live update: server broadcasts JSON {type:"theme", theme:{background,foreground}} */
-export const THEME_UPDATE_TYPE = "theme";
-/** Session title update (from OSC 0/2 in PTY output): JSON {type:"title", title:string} */
-export const TITLE_UPDATE_TYPE = "title";
-/** Endpoints that upgrade to WS — keep backward compat with old paths. */
-export const WS_PATHS = ["/ws", "/api/terminal", "/ws/terminal"] as const;
-export function isWsPath(pathname: string): boolean {
-  return (WS_PATHS as readonly string[]).includes(pathname);
+// ---------------------------------------------------------------------------
+// Client → Server raw-input events (JSON text frames). The server owns all
+// input conversion (keys → escape sequences, pointer → SGR, scroll intent).
+// ---------------------------------------------------------------------------
+
+export interface KeyEvent {
+  t: "key";
+  /** KeyboardEvent.key */
+  k: string;
+  /** KeyboardEvent.code (physical key) */
+  code: string;
+  ctrl: boolean;
+  alt: boolean;
+  meta: boolean;
+  shift: boolean;
+  repeat: boolean;
+}
+
+/** IME composition / printable text committed client-side. */
+export interface TextEvent {
+  t: "text";
+  s: string;
+}
+
+export interface PasteEvent {
+  t: "paste";
+  s: string;
+}
+
+export type PointerKind = 0 | 1 | 2 | 3; // 0 down, 1 move, 2 up, 3 wheel
+export type PointerType = 0 | 1 | 2; // 0 mouse, 1 touch, 2 pen
+
+export interface PointerEventMsg {
+  t: "ptr";
+  /** 0 down, 1 move, 2 up, 3 wheel */
+  k: PointerKind;
+  /** 1-based cell column */
+  x: number;
+  /** 1-based cell row */
+  y: number;
+  /** button: 0 left, 1 middle, 2 right (for down) */
+  b: number;
+  /** modifier bits: 1 shift, 2 alt, 4 ctrl */
+  m: number;
+  /** pointer type: 0 mouse, 1 touch, 2 pen */
+  pt: PointerType;
+  /** wheel deltas (kind === 3) */
+  dx?: number;
+  dy?: number;
+}
+
+export interface FocusEventMsg {
+  t: "focus";
+  v: boolean;
+}
+
+export interface ScrollEventMsg {
+  t: "scroll";
+  /** Signed row delta (positive = scroll up into history). */
+  d: number;
+}
+
+export interface ResizeEventMsg {
+  t: "resize";
+  c: number;
+  r: number;
+}
+
+export interface SessionDeleteMsg {
+  t: "del";
+  id: string;
+}
+
+export type ClientEvent =
+  | KeyEvent
+  | TextEvent
+  | PasteEvent
+  | PointerEventMsg
+  | FocusEventMsg
+  | ScrollEventMsg
+  | ResizeEventMsg
+  | SessionDeleteMsg;
+
+export function encodeClientEvent(e: ClientEvent): string {
+  return JSON.stringify(e);
+}
+
+export function decodeClientEvent(raw: string): ClientEvent | null {
+  try {
+    const j = JSON.parse(raw) as ClientEvent;
+    if (typeof j !== "object" || j === null) return null;
+    switch (j.t) {
+      case "key":
+        if (typeof j.k !== "string" || typeof j.code !== "string") return null;
+        return j;
+      case "text":
+      case "paste":
+        if (typeof (j as TextEvent).s !== "string") return null;
+        return j;
+      case "ptr":
+        if (
+          typeof j.k !== "number" ||
+          typeof j.x !== "number" ||
+          typeof j.y !== "number"
+        )
+          return null;
+        return j;
+      case "focus":
+      case "scroll":
+      case "resize":
+      case "del":
+        return j;
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
 }

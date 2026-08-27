@@ -1,4 +1,6 @@
 /* termw — vendored from vendor/wterm/packages/@wterm/dom/src/terminal.css — do not edit manually, run `npm run build:wasm` or copy */
+/* termw — vendored from vendor/wterm/packages/@wterm/dom/src/terminal.css — do not edit manually, run `npm run build:wasm` or copy */
+/* termw — vendored from vendor/wterm/packages/@wterm/dom/src/terminal.css — do not edit manually, run `npm run build:wasm` or copy */
 .wterm {
   --term-fg: #d4d4d4;
   --term-bg: #1e1e1e;
@@ -38,6 +40,9 @@
   outline: none;
   overflow: hidden;
   overflow-anchor: none;
+  /* Pointer/touch events are translated by the server (SGR or scrollback
+     scroll); keep the browser from hijacking gestures for pan/zoom. */
+  touch-action: none;
 }
 
 .wterm:focus,
@@ -75,6 +80,15 @@
 .term-link {
   color: inherit;
   cursor: text;
+}
+
+.term-link.term-auto {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.term-link.term-auto:hover {
+  cursor: pointer;
 }
 
 .wterm.link-modifier-active .term-link:hover,
@@ -120,6 +134,27 @@
 
 .wterm.has-scrollback {
   overflow-y: auto;
+}
+
+/* Server-owned scrollback indicator: the server moves its viewport and ships
+   new frames; this bar only reflects where the viewport is. */
+.term-scrollbar {
+  position: absolute;
+  right: 2px;
+  top: 0;
+  width: 6px;
+  border-radius: 3px;
+  background: var(--term-cursor);
+  opacity: 0;
+  transition: opacity 0.15s;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+  z-index: 20;
+}
+
+.term-scrollbar:hover {
+  width: 8px;
 }
 
 .wterm ::selection {
