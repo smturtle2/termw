@@ -1,6 +1,6 @@
 import { WTerm } from "@wterm/dom";
-import { DEFAULT_THEME, normalizeTheme, type Theme } from "../shared/theme.js";
-import { encodeResize } from "../shared/protocol.js";
+import { DEFAULT_THEME, luminance, normalizeTheme, type Theme } from "../shared/theme.js";
+import { encodeResize, THEME_UPDATE_TYPE } from "../shared/protocol.js";
 
 const el = document.getElementById("terminal") as HTMLElement;
 let ws: WebSocket | null = null;
@@ -19,10 +19,10 @@ async function fetchTheme(): Promise<Theme> {
 
 function applyTheme(theme: Theme, wterm: WTerm) {
   el.classList.remove("theme-korean-light", "theme-light", "theme-dark", "theme-solarized-dark", "theme-monokai");
-  if (theme.mode === "dark") {
-    el.classList.add("theme-dark");
-  } else {
+  if (luminance(theme.background) > 128) {
     el.classList.add("theme-korean-light");
+  } else {
+    el.classList.add("theme-dark");
   }
   try {
     const bg = parseInt(theme.background.replace("#", ""), 16);
@@ -78,6 +78,15 @@ function connect(wterm: WTerm) {
     if (data instanceof ArrayBuffer) text = new TextDecoder().decode(new Uint8Array(data));
     else if (data instanceof Uint8Array) text = new TextDecoder().decode(data);
     else text = data as string;
+    // theme live update is JSON {type:"theme", theme:{background,foreground}}
+    try {
+      const j = JSON.parse(text);
+      if (j && j.type === THEME_UPDATE_TYPE && j.theme) {
+        const t = normalizeTheme(j.theme);
+        applyTheme(t, wterm);
+        return;
+      }
+    } catch {}
     wterm.write(text);
     // Drain OSC 10/11 replies (e.g., opencode queries both)
     const bridge = (wterm as any).bridge as { getResponse?: () => string | null } | undefined;
@@ -101,5 +110,54 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") term?.focus();
 });
 window.addEventListener("click", () => term?.focus());
+
+function setupThemeUI() {
+  const btn = document.getElementById("theme-btn") as HTMLButtonElement | null;
+  const dlg = document.getElementById("theme-dialog") as HTMLDialogElement | null;
+  const bg = document.getElementById("theme-bg") as HTMLInputElement | null;
+  const fg = document.getElementById("theme-fg") as HTMLInputElement | null;
+  const preset = document.getElementById("theme-preset") as HTMLSelectElement | null;
+  const apply = document.getElementById("theme-apply") as HTMLButtonElement | null;
+  const cancel = document.getElementById("theme-cancel") as HTMLButtonElement | null;
+  const status = document.getElementById("theme-status") as HTMLElement | null;
+  if (!btn || !dlg || !bg || !fg || !preset || !apply || !cancel) return;
+  const PRESETS: Record<string, Theme> = {
+    light: { background: "#ffffff", foreground: "#000000" },
+    dark: { background: "#1e1e1e", foreground: "#d4d4d4" },
+    solarized: { background: "#002b36", foreground: "#839496" },
+    monokai: { background: "#272822", foreground: "#f8f8f2" },
+  };
+  btn.addEventListener("click", async () => {
+    try {
+      const t = await fetchTheme();
+      bg.value = t.background;
+      fg.value = t.foreground;
+      if (status) status.textContent = "";
+      dlg.showModal();
+    } catch {}
+  });
+  preset.addEventListener("change", () => {
+    const p = PRESETS[preset.value];
+    if (p) { bg.value = p.background; fg.value = p.foreground; }
+  });
+  cancel.addEventListener("click", () => dlg.close());
+  apply.addEventListener("click", async () => {
+    const theme = { background: bg.value, foreground: fg.value };
+    try {
+      const r = await fetch("/api/theme", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(theme) });
+      const j = await r.json();
+      if (!r.ok) {
+        if (status) { status.style.color = "#c00"; status.textContent = (j.errors || ["failed"]).join("; "); }
+        return;
+      }
+      if (term) applyTheme(j.theme, term);
+      if (status) { status.style.color = "#0a0"; status.textContent = "saved"; }
+      setTimeout(() => dlg.close(), 400);
+    } catch (e) {
+      if (status) { status.style.color = "#c00"; status.textContent = e instanceof Error ? e.message : String(e); }
+    }
+  });
+}
+setupThemeUI();
 
 init();

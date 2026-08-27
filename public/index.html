@@ -40,6 +40,39 @@
 </head>
 <body>
   <div id="terminal" class="wterm theme-korean-light" role="textbox" aria-label="Terminal" aria-multiline="true" aria-roledescription="terminal" tabindex="0"></div>
+  <button id="theme-btn" aria-label="Theme settings" title="Theme">🎨</button>
+  <dialog id="theme-dialog">
+    <form method="dialog">
+      <h3>Theme — terminal</h3>
+      <p style="font-size:12px;color:#666;margin:0 0 8px">background/foreground만 저장, TUI는 OSC 11;? 휘도로 판단</p>
+      <div style="display:flex;gap:12px;align-items:center;margin:8px 0">
+        <label>Background <input type="color" id="theme-bg" value="#ffffff"></label>
+        <label>Foreground <input type="color" id="theme-fg" value="#000000"></label>
+      </div>
+      <div style="margin:8px 0">
+        <label>Preset
+          <select id="theme-preset">
+            <option value="">custom</option>
+            <option value="light">light #ffffff/#000000</option>
+            <option value="dark">dark #1e1e1e/#d4d4d4</option>
+            <option value="solarized">solarized #002b36/#839496</option>
+            <option value="monokai">monokai #272822/#f8f8f2</option>
+          </select>
+        </label>
+      </div>
+      <div id="theme-status" style="font-size:12px;color:#0a0;min-height:1em"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button type="button" id="theme-cancel">Cancel</button>
+        <button type="button" id="theme-apply">Apply</button>
+      </div>
+    </form>
+  </dialog>
   <script type="module" src="/app.js"></script>
+  <style>
+    #theme-btn{position:fixed;top:8px;right:8px;z-index:10;background:#fff;border:1px solid #ccc;border-radius:6px;padding:6px 8px;cursor:pointer;opacity:0.85}
+    #theme-btn:hover{opacity:1}
+    #theme-dialog{border:1px solid #ccc;border-radius:8px;padding:16px;max-width:360px}
+    #theme-dialog::backdrop{background:rgba(0,0,0,0.3)}
+  </style>
 </body>
 </html>

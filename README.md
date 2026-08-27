@@ -52,16 +52,15 @@ bun dist/server/index.js
 ## Configuration
 
 ```json
-{"mode":"light","background":"#ffffff","foreground":"#000000"}
+{"background":"#ffffff","foreground":"#000000"}
 ```
 
 | Field | Type | Example |
 |---|---|---|
-| `mode` | `light` \| `dark` | `light` |
 | `background` | `#rrggbb` | `#ffffff` |
 | `foreground` | `#rrggbb` | `#000000` |
 
-`config/theme.json` — single source, served as `GET /theme.json`.
+`config/theme.json` — single source, served as `GET /theme.json` and `PUT /api/theme`. Terminal theme drives PTY (`COLORFGBG` derived from `luminance(background)`, `THEME_BG/FG`) and `OSC 11;?` `rgb:RRRR/GGGG/BBBB`; TUI measures luminance itself. Live reload via `fs.watch` + WS `{type:"theme"}`. UI: 🎨 button or `bun run theme set --bg #1e1e1e --fg #d4d4d4 --preset dark`.
 
 ## Deploy
 

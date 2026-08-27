@@ -4,7 +4,8 @@ import { toColorFgbg } from "../shared/theme.js";
 /**
  * Build sanitized env for Bun.spawn terminal.
  * Contract: never pass process.env wholesale — only allowlisted keys.
- * Theme drives COLORFGBG + THEME_* so PTY and any TUI (opencode) see luminance-consistent values.
+ * Theme drives COLORFGBG + THEME_BG/FG so PTY and any TUI (opencode) see terminal theme.
+ * TUI measures luminance from OSC 11;? / THEME_BG itself.
  */
 export function buildPtyEnv(theme: Theme): Record<string, string> {
   return {
@@ -20,7 +21,6 @@ export function buildPtyEnv(theme: Theme): Record<string, string> {
     USER: "root",
     LOGNAME: "root",
     EDITOR: process.env.EDITOR || "vi",
-    THEME_MODE: theme.mode,
     THEME_BG: theme.background,
     THEME_FG: theme.foreground,
   };

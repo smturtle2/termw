@@ -41,7 +41,11 @@
     "start": "bun dist/server/index.js",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "format": "prettier --write \"src/**/*.{ts,js,css}\""
+    "format": "prettier --write \"src/**/*.{ts,js,css}\"",
+    "theme": "bun scripts/theme.ts",
+    "theme:get": "bun scripts/theme.ts get",
+    "theme:set": "bun scripts/theme.ts set",
+    "theme:validate": "bun scripts/theme.ts validate"
   },
   "dependencies": {},
   "devDependencies": {

@@ -1,7 +1,8 @@
 import path from "path";
 import { fileURLToPath } from "url";
-import { getTheme } from "./theme.js";
-import { isWsPath } from "../shared/protocol.js";
+import { getTheme, setTheme, themeFileInUse, watchTheme } from "./theme.js";
+import { validateTheme } from "../shared/theme.js";
+import { isWsPath, THEME_UPDATE_TYPE } from "../shared/protocol.js";
 import { ptyClose, ptyMessage, ptyOpen } from "./pty.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -33,6 +34,22 @@ function mimeFor(filePath: string): string {
   return MIME[ext] || "application/octet-stream";
 }
 
+// track live WS for theme broadcast
+const liveWS = new Set<any>();
+
+function broadcastTheme() {
+  const theme = getTheme();
+  const payload = JSON.stringify({ type: THEME_UPDATE_TYPE, theme });
+  for (const ws of liveWS) {
+    try { ws.send(payload); } catch {}
+  }
+}
+
+// watch theme file for external edits (echo > config/theme.json)
+const themeWatcher = watchTheme(() => {
+  broadcastTheme();
+});
+
 const server = Bun.serve({
   hostname: HOST,
   port: PORT,
@@ -44,17 +61,46 @@ const server = Bun.serve({
       return new Response("ok", { headers: { "Content-Type": "text/plain" } });
     }
 
-    if (pathname === "/theme.json") {
-      try {
-        const theme = getTheme();
-        return new Response(JSON.stringify(theme), {
-          headers: {
-            "Content-Type": "application/json; charset=utf-8",
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-          },
-        });
-      } catch {
-        return new Response("{}", { headers: { "Content-Type": "application/json" } });
+    if (pathname === "/theme.json" || pathname === "/api/theme") {
+      if (req.method === "GET") {
+        try {
+          const theme = getTheme();
+          return new Response(JSON.stringify(theme), {
+            headers: {
+              "Content-Type": "application/json; charset=utf-8",
+              "Cache-Control": "no-cache, no-store, must-revalidate",
+            },
+          });
+        } catch {
+          return new Response("{}", { headers: { "Content-Type": "application/json" } });
+        }
+      }
+      if (req.method === "PUT") {
+        try {
+          const body = await req.json();
+          const v = validateTheme(body);
+          if (!v.ok) {
+            return new Response(JSON.stringify({ ok: false, errors: v.errors }), {
+              status: 400,
+              headers: { "Content-Type": "application/json; charset=utf-8" },
+            });
+          }
+          const file = setTheme(v.theme!);
+          // broadcast is also triggered by file watch, but send immediately
+          const payload = JSON.stringify({ type: THEME_UPDATE_TYPE, theme: v.theme });
+          for (const ws of liveWS) {
+            try { ws.send(payload); } catch {}
+          }
+          return new Response(JSON.stringify({ ok: true, theme: v.theme, file }), {
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+          });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return new Response(JSON.stringify({ ok: false, errors: [msg || "invalid json"] }), {
+            status: 400,
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+          });
+        }
       }
     }
 
@@ -90,13 +136,20 @@ const server = Bun.serve({
   },
   websocket: {
     open(ws) {
+      liveWS.add(ws as any);
       ptyOpen(ws as any, { shell: SHELL, home: HOME });
+      // send current theme on connect so client can sync without fetch
+      try {
+        const theme = getTheme();
+        ws.send(JSON.stringify({ type: THEME_UPDATE_TYPE, theme }));
+      } catch {}
     },
     message(ws, message) {
       // message is string | Buffer (Uint8Array)
       ptyMessage(ws as any, message as unknown as string | Buffer, { shell: SHELL, home: HOME });
     },
     close(ws) {
+      liveWS.delete(ws as any);
       ptyClose(ws as any);
     },
   },
@@ -104,3 +157,4 @@ const server = Bun.serve({
 
 console.log(`[termw] ready http://${server.hostname}:${server.port}  public=${PUBLIC_DIR}`);
 console.log(`[termw] ws ws://${server.hostname}:${server.port}/ws  shell=${SHELL} home=${HOME}`);
+console.log(`[termw] theme ${JSON.stringify(getTheme())} file=${themeFileInUse() ?? "(default)"}`);

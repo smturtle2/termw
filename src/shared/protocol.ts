@@ -20,6 +20,8 @@ export function decodeResize(msg: string): { cols: number; rows: number } | null
 }
 
 /** Server → Client: raw PTY bytes (including OSC responses). No framing. */
+/** Theme live update: server broadcasts JSON {type:"theme", theme:{background,foreground}} */
+export const THEME_UPDATE_TYPE = "theme";
 /** Endpoints that upgrade to WS — keep backward compat with old paths. */
 export const WS_PATHS = ["/ws", "/api/terminal", "/ws/terminal"] as const;
 export function isWsPath(pathname: string): boolean {
