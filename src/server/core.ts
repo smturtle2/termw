@@ -43,7 +43,6 @@ interface WasmExports {
   getLinkIdPtr(index: number): number;
   getLinkIdLen(index: number): number;
   getScrollbackCount(): number;
-  getScrollbackDiscardedCount(): number;
   getScrollbackLine(offset: number): number;
   getScrollbackLineLen(offset: number): number;
   getResponsePtr(): number;
@@ -122,9 +121,6 @@ export class TerminalCore {
   }
   get maxCols(): number {
     return this._maxCols;
-  }
-  get cellSizeBytes(): number {
-    return this.cellSize;
   }
 
   /** Feed raw PTY bytes into the emulator. Chunks are clamped to the input buffer. */
@@ -221,9 +217,6 @@ export class TerminalCore {
   }
   scrollbackCount(): number {
     return this.exports.getScrollbackCount();
-  }
-  scrollbackDiscarded(): number {
-    return this.exports.getScrollbackDiscardedCount();
   }
 
   /** Hyperlink table entry for a link index. */

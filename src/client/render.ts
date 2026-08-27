@@ -11,7 +11,6 @@ export interface RenderCell {
   flags: number;
   width: number;
   linkUri?: string;
-  linkId?: string;
   linkKey?: string;
 }
 
@@ -202,8 +201,7 @@ function safeLinkHref(uri: string | undefined): string | undefined {
 const AUTO_URL_RE = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/g;
 
 function linkIdentity(cell: RenderCell): string {
-  if (!cell.linkUri) return "";
-  return cell.linkKey ?? `fallback\0${cell.linkId ?? ""}\0${cell.linkUri}`;
+  return cell.linkKey ?? "";
 }
 
 function cellText(cell: RenderCell, inBounds: boolean): string {

@@ -1,11 +1,12 @@
 import { TermView } from "./term.js";
-import { encodeClientEvent, type ClientEvent } from "../shared/protocol.js";
-import { isRenderFrame } from "../shared/frame.js";
-import { DEFAULT_THEME, luminance, normalizeTheme, type Theme } from "../shared/theme.js";
 import {
+  encodeClientEvent,
   THEME_UPDATE_TYPE,
   TITLE_UPDATE_TYPE,
+  type ClientEvent,
 } from "../shared/protocol.js";
+import { isRenderFrame } from "../shared/frame.js";
+import { DEFAULT_THEME, luminance, normalizeTheme, type Theme } from "../shared/theme.js";
 
 const el = document.getElementById("terminal") as HTMLElement;
 const tabListEl = document.getElementById("tab-list") as HTMLElement;

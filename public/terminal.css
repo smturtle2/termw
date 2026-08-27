@@ -1,6 +1,4 @@
-/* termw — vendored from vendor/wterm/packages/@wterm/dom/src/terminal.css — do not edit manually, run `npm run build:wasm` or copy */
-/* termw — vendored from vendor/wterm/packages/@wterm/dom/src/terminal.css — do not edit manually, run `npm run build:wasm` or copy */
-/* termw — vendored from vendor/wterm/packages/@wterm/dom/src/terminal.css — do not edit manually, run `npm run build:wasm` or copy */
+/* termw terminal styles — canonical file (not synced from vendor). */
 .wterm {
   --term-fg: #d4d4d4;
   --term-bg: #1e1e1e;
@@ -132,29 +130,40 @@
   50% { background: transparent; color: inherit; }
 }
 
-.wterm.has-scrollback {
-  overflow-y: auto;
-}
-
 /* Server-owned scrollback indicator: the server moves its viewport and ships
-   new frames; this bar only reflects where the viewport is. */
+   new frames; this thumb only reflects where the viewport is. The track is a
+   full-height hit area (page clicks + drag); the thumb slides within it.
+   Visible whenever scrollback exists (a subtle presence affordance). */
 .term-scrollbar {
   position: absolute;
   right: 2px;
   top: 0;
-  width: 6px;
-  border-radius: 3px;
-  background: var(--term-cursor);
-  opacity: 0;
-  transition: opacity 0.15s;
+  bottom: 0;
+  width: 8px;
   cursor: pointer;
   pointer-events: auto;
   touch-action: none;
   z-index: 20;
 }
 
-.term-scrollbar:hover {
-  width: 8px;
+.term-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  left: 1px;
+  right: 1px;
+  border-radius: 3px;
+  background: var(--term-cursor);
+  opacity: 0;
+  transition: opacity 0.15s, width 0.15s;
+}
+
+.term-scrollbar.visible .term-scrollbar-thumb {
+  opacity: 0.35;
+}
+
+.term-scrollbar:hover .term-scrollbar-thumb,
+.term-scrollbar-thumb.dragging {
+  opacity: 0.9;
 }
 
 .wterm ::selection {

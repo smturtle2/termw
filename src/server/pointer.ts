@@ -44,8 +44,8 @@ export function handlePointer(
     const dx = msg.dx ?? 0;
     const dy = msg.dy ?? 0;
     if (reporting) {
-      if (Math.abs(dx) > Math.abs(dy)) {
-        if (dx === 0) return { input: null, scrolled: false };
+      const horizontal = Math.abs(dx) > Math.abs(dy) && dx !== 0;
+      if (horizontal) {
         return {
           input: `\x1b[<${(dx < 0 ? 66 : 67) | mods};${x};${y}M`,
           scrolled: false,
@@ -67,10 +67,7 @@ export function handlePointer(
   if (reporting) {
     // The client already gates moves (only while pressed, or any-motion in
     // 1003 mode), so every move we receive is reportable.
-    if (k === 2 && b > 2) return { input: null, scrolled: false };
-    const button = k === 1 ? b : b; // down/up/move use the button number
-    const code =
-      button | mods | (k === 1 ? 32 : 0);
+    const code = b | mods | (k === 1 ? 32 : 0);
     const final = k === 2 ? "m" : "M";
     return { input: `\x1b[<${code};${x};${y}${final}`, scrolled: false };
   }

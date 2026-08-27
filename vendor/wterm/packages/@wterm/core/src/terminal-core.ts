@@ -71,7 +71,7 @@ export interface TerminalCore {
   cursorKeysApp(): boolean;
   bracketedPaste(): boolean;
   usingAltScreen(): boolean;
-  mouseTracking?(): 0 | 1000 | 1002 | 1003;
+  mouseTracking?(): 0 | 1000 | 1002;
   mouseSgr?(): boolean;
   focusEvents?(): boolean;
   synchronizedOutput?(): boolean;

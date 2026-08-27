@@ -130,7 +130,9 @@ export class Viewport {
         if (g >= scrollbackTotal) {
           bytes = core.gridRowBytes(g - scrollbackTotal);
         } else if (g >= 0) {
-          const line = core.scrollbackLineBytes(g);
+          // Core indexes scrollback from the newest line (offset 0); document
+          // position g counts from the oldest, so invert.
+          const line = core.scrollbackLineBytes(scrollbackTotal - 1 - g);
           if (line.length >= cols * 12) {
             bytes = line;
           } else {

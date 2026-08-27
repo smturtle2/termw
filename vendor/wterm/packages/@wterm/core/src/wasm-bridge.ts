@@ -51,7 +51,6 @@ interface WasmExports {
   getDebugLogCount(): number;
   getDebugLogEntrySize(): number;
   getDebugLogMax(): number;
-  setThemeColors?(bgRgb: number, fgRgb: number): void;
 }
 
 import { WASM_BASE64 } from "./wasm-inline.js";
@@ -187,9 +186,9 @@ export class WasmBridge implements TerminalCore {
   usingAltScreen(): boolean {
     return this.exports.getUsingAltScreen() !== 0;
   }
-  mouseTracking(): 0 | 1000 | 1002 | 1003 {
+  mouseTracking(): 0 | 1000 | 1002 {
     const mode = this.exports.getMouseTracking();
-    return mode === 1000 || mode === 1002 || mode === 1003 ? mode : 0;
+    return mode === 1000 || mode === 1002 ? mode : 0;
   }
   mouseSgr(): boolean {
     return this.exports.getMouseSgr() !== 0;
@@ -304,11 +303,6 @@ export class WasmBridge implements TerminalCore {
   resize(cols: number, rows: number): void {
     this.exports.resizeTerminal(cols, rows);
     this._updatePointers();
-  }
-
-  setThemeColors(bgRgb: number, fgRgb: number): void {
-    const exp = this.exports as unknown as { setThemeColors?: (bg: number, fg: number) => void };
-    if (exp.setThemeColors) exp.setThemeColors(bgRgb, fgRgb);
   }
 
   private _readLink(

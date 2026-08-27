@@ -42,17 +42,9 @@ const FIXED_KEYS: Record<string, string> = {
   F12: "\x1b[24~",
 };
 
-interface CursorRect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
 export class InputHandler {
   private element: HTMLElement;
   private textarea: HTMLTextAreaElement;
-  private compositionView: HTMLSpanElement;
   private onData: (data: string) => void;
   private getBridge: () => TerminalCore | null;
   private getCellSize: () => {
@@ -62,15 +54,10 @@ export class InputHandler {
   private composing = false;
   private mouseButtons = 0;
   private focused = false;
-  private _charWidth = 0;
-  private _cursorObserver: MutationObserver;
-  private _positionRaf: number | null = null;
-  private _suppressMouse = false;
 
   private _onKeyDown: (e: KeyboardEvent) => void;
   private _onPaste: (e: ClipboardEvent) => void;
   private _onCompositionStart: () => void;
-  private _onCompositionUpdate: (e: CompositionEvent) => void;
   private _onCompositionEnd: (e: CompositionEvent) => void;
   private _onInput: () => void;
   private _onFocus: () => void;
@@ -79,10 +66,6 @@ export class InputHandler {
   private _onMouseMove: (e: MouseEvent) => void;
   private _onMouseUp: (e: MouseEvent) => void;
   private _onWheel: (e: WheelEvent) => void;
-  private _onElementMouseMove: (e: MouseEvent) => void;
-  private _onTouchStart: (e: TouchEvent) => void;
-  private _onTouchMove: (e: TouchEvent) => void;
-  private _onTouchEnd: (e: TouchEvent) => void;
 
   constructor(
     element: HTMLElement,
@@ -106,12 +89,11 @@ export class InputHandler {
     this.textarea.setAttribute("aria-hidden", "true");
     const s = this.textarea.style;
     s.position = "absolute";
-    s.left = "0";
+    s.left = "-9999px";
     s.top = "0";
-    s.width = "1ch";
-    s.height = "1.2em";
+    s.width = "1px";
+    s.height = "1px";
     s.opacity = "0";
-    s.zIndex = "10";
     s.overflow = "hidden";
     s.border = "0";
     s.padding = "0";
@@ -124,28 +106,9 @@ export class InputHandler {
     s.background = "transparent";
     element.appendChild(this.textarea);
 
-    this.compositionView = document.createElement("span");
-    this.compositionView.className = "term-composition";
-    const cs = this.compositionView.style;
-    cs.position = "absolute";
-    cs.font = "inherit";
-    cs.color = "inherit";
-    cs.background = "var(--term-bg, #1e1e1e)";
-    cs.whiteSpace = "pre";
-    cs.textDecoration = "underline";
-    cs.textDecorationStyle = "solid";
-    cs.zIndex = "50";
-    cs.pointerEvents = "none";
-    cs.padding = "0";
-    cs.margin = "0";
-    cs.border = "0";
-    cs.display = "none";
-    element.appendChild(this.compositionView);
-
     this._onKeyDown = this.handleKeyDown.bind(this);
     this._onPaste = this.handlePaste.bind(this);
     this._onCompositionStart = this.handleCompositionStart.bind(this);
-    this._onCompositionUpdate = this.handleCompositionUpdate.bind(this);
     this._onCompositionEnd = this.handleCompositionEnd.bind(this);
     this._onInput = this.handleInput.bind(this);
     this._onFocus = () => {
@@ -153,7 +116,6 @@ export class InputHandler {
       this.focused = true;
       this.element.classList.add("focused");
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[I");
-      this._positionTextareaAtCursor();
     };
     this._onBlur = () => {
       this.focused = false;
@@ -161,26 +123,9 @@ export class InputHandler {
       this.stopMouseCapture();
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[O");
     };
-    this._onMouseDown = (event) => {
-      // Chrome synthesizes a mousedown after touch gestures — drop it so
-      // touch doesn't double-report press to the app (see _onTouchStart).
-      if (this._suppressMouse) {
-        this._suppressMouse = false;
-        return;
-      }
-      this.handleMouse(event, "press");
-    };
+    this._onMouseDown = (event) => this.handleMouse(event, "press");
     this._onMouseMove = (event) => {
       if (this.mouseButtons !== 0) this.handleMouse(event, "move");
-    };
-    // 1003 (any-motion) needs move reports with no button held — element
-    // never had a mousemove listener for that; window capture only exists
-    // while dragging. Skip when a button is held (window path covers that).
-    this._onElementMouseMove = (event) => {
-      const tracking = this.getBridge()?.mouseTracking?.() ?? 0;
-      if (tracking === 1003 && this.mouseButtons === 0) {
-        this.handleMouse(event, "move");
-      }
     };
     this._onMouseUp = (event) => {
       if (this.mouseButtons === 0) return;
@@ -189,19 +134,12 @@ export class InputHandler {
       if (this.mouseButtons === 0) this.stopMouseCapture();
     };
     this._onWheel = (event) => this.handleMouse(event, "wheel");
-    this._onTouchStart = (event) => this.handleTouch(event, "press");
-    this._onTouchMove = (event) => this.handleTouch(event, "move");
-    this._onTouchEnd = (event) => this.handleTouch(event, "release");
 
     this.textarea.addEventListener("keydown", this._onKeyDown);
     this.textarea.addEventListener("paste", this._onPaste as EventListener);
     this.textarea.addEventListener(
       "compositionstart",
       this._onCompositionStart,
-    );
-    this.textarea.addEventListener(
-      "compositionupdate",
-      this._onCompositionUpdate as EventListener,
     );
     this.textarea.addEventListener(
       "compositionend",
@@ -211,96 +149,7 @@ export class InputHandler {
     this.textarea.addEventListener("focus", this._onFocus);
     this.textarea.addEventListener("blur", this._onBlur);
     this.element.addEventListener("mousedown", this._onMouseDown);
-    this.element.addEventListener("mousemove", this._onElementMouseMove);
     this.element.addEventListener("wheel", this._onWheel, { passive: false });
-    this.element.addEventListener("touchstart", this._onTouchStart, { passive: false });
-    this.element.addEventListener("touchmove", this._onTouchMove, { passive: false });
-    this.element.addEventListener("touchend", this._onTouchEnd, { passive: false });
-    // After a drag the browser moves focus to the (tabindex=0) terminal div,
-    // so keys would go nowhere. Forward them to the textarea instead.
-    this.element.addEventListener("keydown", (event) => {
-      if (this.element.ownerDocument.activeElement !== this.element) return;
-      event.preventDefault();
-      event.stopPropagation();
-      this.textarea.focus({ preventScroll: true });
-      this.textarea.dispatchEvent(new KeyboardEvent("keydown", event));
-    });
-
-    // Coalesce renderer DOM mutations into one rAF tick
-    this._cursorObserver = new MutationObserver(() => {
-      if (this._positionRaf !== null) return;
-      this._positionRaf = requestAnimationFrame(() => {
-        this._positionRaf = null;
-        this._positionTextareaAtCursor();
-      });
-    });
-    this._cursorObserver.observe(element, { childList: true, subtree: true });
-    this._positionTextareaAtCursor();
-  }
-
-  private _measureCharWidth(): number {
-    if (this._charWidth) return this._charWidth;
-    const probe = document.createElement("span");
-    const ps = probe.style;
-    ps.font = "inherit";
-    ps.position = "absolute";
-    ps.visibility = "hidden";
-    ps.whiteSpace = "pre";
-    ps.left = "-9999px";
-    probe.textContent = "xxxxxxxxxx";
-    this.element.appendChild(probe);
-    const w = probe.getBoundingClientRect().width / 10;
-    probe.remove();
-    this._charWidth = w > 0 ? w : 8;
-    return this._charWidth;
-  }
-
-  private _getCursorRect(): CursorRect | null {
-    const elRect = this.element.getBoundingClientRect();
-    const cursorEl = this.element.querySelector(".term-cursor");
-    if (cursorEl) {
-      const r = cursorEl.getBoundingClientRect();
-      return {
-        left: r.left - elRect.left + this.element.scrollLeft,
-        top: r.top - elRect.top + this.element.scrollTop,
-        width: r.width,
-        height: r.height,
-      };
-    }
-    // TUI apps that hide cursor (\x1b[?25l) drop .term-cursor; fallback to bridge
-    const bridge = this.getBridge();
-    const cur = bridge ? (bridge as any).getCursor?.() : null;
-    if (!cur) return null;
-    const rows = this.element.querySelectorAll(".term-row");
-    const rowEl = rows[cur.row] as HTMLElement | undefined;
-    if (!rowEl) return null;
-    const rRect = rowEl.getBoundingClientRect();
-    const charW = this._measureCharWidth();
-    return {
-      left:
-        rRect.left - elRect.left + this.element.scrollLeft + cur.col * charW,
-      top: rRect.top - elRect.top + this.element.scrollTop,
-      width: charW,
-      height: rRect.height,
-    };
-  }
-
-  private _positionTextareaAtCursor(): void {
-    const rect = this._getCursorRect();
-    if (!rect) return;
-    const s = this.textarea.style;
-    s.left = rect.left + "px";
-    s.top = rect.top + "px";
-    s.width = Math.max(1, rect.width) + "px";
-    s.height = Math.max(1, rect.height) + "px";
-    // Keep composition view anchored too if visible
-    if (this.composing && this.compositionView.style.display !== "none") {
-      const cs = this.compositionView.style;
-      cs.left = rect.left + "px";
-      cs.top = rect.top + "px";
-      cs.height = rect.height + "px";
-      cs.lineHeight = rect.height + "px";
-    }
   }
 
   focus(): void {
@@ -308,20 +157,11 @@ export class InputHandler {
   }
 
   destroy(): void {
-    this._cursorObserver?.disconnect();
-    if (this._positionRaf !== null) {
-      cancelAnimationFrame(this._positionRaf);
-      this._positionRaf = null;
-    }
     this.textarea.removeEventListener("keydown", this._onKeyDown);
     this.textarea.removeEventListener("paste", this._onPaste as EventListener);
     this.textarea.removeEventListener(
       "compositionstart",
       this._onCompositionStart,
-    );
-    this.textarea.removeEventListener(
-      "compositionupdate",
-      this._onCompositionUpdate as EventListener,
     );
     this.textarea.removeEventListener(
       "compositionend",
@@ -335,13 +175,10 @@ export class InputHandler {
     this.element.removeEventListener("wheel", this._onWheel);
     this.element.classList.remove("focused");
     this.textarea.remove();
-    this.compositionView.remove();
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
-    // IME first keystroke fires keydown with keyCode 229 before compositionstart
-    // Also handle e.isComposing and e.key === "Process" for Chromium/full coverage
-    if (this.composing || (e as any).isComposing || e.keyCode === 229 || (e.key as string) === "Process") return;
+    if (this.composing) return;
 
     if ((e.metaKey || e.ctrlKey) && e.key === "c") {
       const sel = window.getSelection();
@@ -391,49 +228,12 @@ export class InputHandler {
 
   private handleCompositionStart(): void {
     this.composing = true;
-    this._positionTextareaAtCursor();
-    this._showCompositionView();
-  }
-
-  private handleCompositionUpdate(e: CompositionEvent): void {
-    this.compositionView.textContent = e.data || "";
   }
 
   private handleCompositionEnd(e: CompositionEvent): void {
     this.composing = false;
-    this._hideCompositionView();
-    const committed = e.data || "";
-    if (committed) this.onData(committed);
-    // Generic: flush any characters that were typed during composition
-    // (e.g. "?" via Shift+/ immediately after "안녕"). The textarea may
-    // contain the committed text plus the extra char, or just the extra char.
-    // Avoid double-sending by stripping the committed prefix if present.
-    const raw = this.textarea.value;
-    if (raw) {
-      let toSend = raw;
-      if (committed && raw.startsWith(committed)) {
-        toSend = raw.slice(committed.length);
-      }
-      if (toSend) this.onData(toSend);
-    }
+    if (e.data) this.onData(e.data);
     this.textarea.value = "";
-  }
-
-  private _showCompositionView(): void {
-    const rect = this._getCursorRect();
-    const cs = this.compositionView.style;
-    if (rect) {
-      cs.left = rect.left + "px";
-      cs.top = rect.top + "px";
-      cs.height = rect.height + "px";
-      cs.lineHeight = rect.height + "px";
-    }
-    cs.display = "inline-block";
-  }
-
-  private _hideCompositionView(): void {
-    this.compositionView.style.display = "none";
-    this.compositionView.textContent = "";
   }
 
   private handleInput(): void {
@@ -443,35 +243,6 @@ export class InputHandler {
       this.onData(value);
       this.textarea.value = "";
     }
-  }
-
-  private handleTouch(
-    event: TouchEvent,
-    kind: "press" | "move" | "release",
-  ): void {
-    const bridge = this.getBridge();
-    const tracking = bridge?.mouseTracking?.() ?? 0;
-    // Mouse reporting off → native touch scroll/selection stays untouched.
-    if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) return;
-    // Multi-touch (pinch etc.) belongs to the browser.
-    if (event.touches.length > 1) return;
-    const t = kind === "release" ? event.changedTouches[0] : event.touches[0];
-    if (!t) return;
-    // Suppress the synthetic mousedown Chrome fires after a touch gesture so
-    // the app doesn't get a duplicate press.
-    if (kind === "press") this._suppressMouse = true;
-    const fake = {
-      clientX: t.clientX,
-      clientY: t.clientY,
-      shiftKey: false,
-      altKey: false,
-      ctrlKey: false,
-      button: 0,
-      buttons: kind === "release" ? 0 : 1,
-      target: event.target,
-      preventDefault: () => event.preventDefault(),
-    } as unknown as MouseEvent;
-    this.handleMouse(fake, kind);
   }
 
   private handleMouse(
@@ -495,12 +266,7 @@ export class InputHandler {
     if (kind === "press" && (event.shiftKey || event.button > 2)) return;
     if (kind === "release" && event.button > 2) return;
     const supportedButtons = event.buttons & 7;
-    // 1003 (any-motion) reports moves even with no button held; 1002 only
-    // while a button is pressed.
-    if (
-      kind === "move" &&
-      (tracking === 1003 ? false : supportedButtons === 0)
-    ) {
+    if (kind === "move" && (tracking !== 1002 || supportedButtons === 0)) {
       return;
     }
 

@@ -12,11 +12,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "dist",
-    "types": ["node", "bun"],
-    "paths": {
-      "@wterm/core": ["./vendor/wterm/packages/@wterm/core/src/index.ts"],
-      "@wterm/dom": ["./vendor/wterm/packages/@wterm/dom/src/index.ts"]
-    }
+    "types": ["node", "bun"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "vendor", "public", "vendor/**/*"]

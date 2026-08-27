@@ -35,3 +35,6 @@ Thumbs.db
 
 # state (never commit local state)
 *.state
+
+# vendored core wasm inline (auto-generated, unused by termw)
+vendor/wterm/packages/@wterm/core/src/wasm-inline.ts

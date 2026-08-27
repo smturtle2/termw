@@ -95,6 +95,18 @@ export function applyThemeToSessions() {
   for (const sess of sessionsById.values()) applyThemeToCore(sess);
 }
 
+/** Spawn the PTY after a grace period unless a client already resized us. */
+function scheduleSpawn(sess: Session, opts: PtyOptions) {
+  if (sess.timer) clearTimeout(sess.timer);
+  sess.timer = setTimeout(() => {
+    sess.timer = null;
+    if (!sess.proc) {
+      console.log(`[termw] no initial RESIZE, spawn ${sess.cols}x${sess.rows} (session=${sess.id})`);
+      spawn(sess, sess.cols, sess.rows, opts);
+    }
+  }, 5000);
+}
+
 function killSession(sess: Session, reason: string) {
   console.log(`[termw] session ${sess.id} kill (${reason})`);
   sessionsById.delete(sess.id);
@@ -194,7 +206,6 @@ function spawn(sess: Session, c: number, r: number, opts: PtyOptions) {
 async function createSession(id: string, opts: PtyOptions): Promise<Session> {
   const core = await TerminalCore.create();
   core.init(80, 24);
-  applyThemeToCore({ core } as Session);
   const sess: Session = {
     id,
     core,
@@ -210,13 +221,9 @@ async function createSession(id: string, opts: PtyOptions): Promise<Session> {
     syncTimer: null,
     lastTitle: "",
   };
+  applyThemeToCore(sess);
   sessionsById.set(id, sess);
-  sess.timer = setTimeout(() => {
-    if (!sess.proc) {
-      console.log(`[termw] no initial RESIZE, spawn 80x24 (session=${id})`);
-      spawn(sess, sess.cols, sess.rows, opts);
-    }
-  }, 5000);
+  scheduleSpawn(sess, opts);
   return sess;
 }
 
@@ -234,13 +241,7 @@ async function attach(ws: WS, sess: Session, opts: PtyOptions) {
     sess.ttlTimer = null;
   }
   if (!sess.proc) {
-    if (sess.timer) clearTimeout(sess.timer);
-    sess.timer = setTimeout(() => {
-      if (!sess.proc) {
-        console.log(`[termw] no initial RESIZE, spawn 80x24 (session=${sess.id})`);
-        spawn(sess, sess.cols, sess.rows, opts);
-      }
-    }, 5000);
+    scheduleSpawn(sess, opts);
     // Client will send resize; until then no screen exists.
     return;
   }
@@ -365,14 +366,4 @@ export function ptyClose(ws: WS) {
   } else {
     sessionsById.delete(id);
   }
-}
-
-/** For tests: list live session ids. */
-export function listSessions(): string[] {
-  return [...sessionsById.keys()];
-}
-
-export function applyThemeToSession(id: string) {
-  const sess = sessionsById.get(id);
-  if (sess) applyThemeToCore(sess);
 }
