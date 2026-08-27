@@ -1,0 +1,10 @@
+[install]
+# text lockfile (bun.lock) — commit it
+frozenLockfile = false
+
+[install.cache]
+# use default cache
+
+[run]
+# use bun runtime for all scripts
+bun = true

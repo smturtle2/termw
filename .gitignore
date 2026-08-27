@@ -1,6 +1,8 @@
 # deps
 node_modules/
 .pnpm-store/
+# bun — commit bun.lock (text), ignore binary bun.lockb if generated
+bun.lockb
 
 # build
 dist/

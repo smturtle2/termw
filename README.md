@@ -2,13 +2,13 @@
 
 # termw
 
-**Fast web terminal — WASM, Korean IME, theme-synced PTY**
+**Fast web terminal — Bun, WASM, Korean IME, theme-synced PTY**
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](./package.json)
+[![Bun](https://img.shields.io/badge/bun-%3E%3D1.4.0-black)](./package.json)
 [![Zig](https://img.shields.io/badge/zig-0.16.0-orange)](./vendor/wterm/build.zig.zon)
 
-*Lightweight `node-pty` + `wterm` (Zig/WASM). Single `theme.json` drives CSS, PTY and OSC.*
+*Lightweight `Bun.spawn` + `wterm` (Zig/WASM). Single `theme.json` drives CSS, PTY and OSC.*
 
 [Features](#features) · [Quickstart](#quickstart) · [Docs](./docs/ARCHITECTURE.md) · [한국어](./README.ko.md)
 
@@ -24,21 +24,30 @@
 
 ## Quickstart
 
+**One-liner:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/smturtle2/termw/main/scripts/install.sh | bash
+# options: bash install.sh -- --dir /opt/termw --port 3000 --no-systemd
+```
+
+**Manual:**
+
 ```bash
 cp config/theme.json.example config/theme.json
 cp config/env.example .env   # optional: HOST/PORT/SHELL
 
-npm install
-npm run build:wasm   # needs zig 0.16.0, else copies prebuilt
-npm run build:client # esbuild → public/app.js
-npm run typecheck
+bun install
+bun run build:wasm   # needs zig 0.16.0, else copies prebuilt
+bun run build:client # esbuild → public/app.js
+bun run typecheck
 
 # dev (no build)
-npm run dev          # http://127.0.0.1:3000  ws://…/ws  health /health
+bun run dev          # http://127.0.0.1:3000  ws://…/ws  health /health
 
 # prod
-npm run build:server # tsc → dist/
-node dist/server/index.js
+bun run build:server # tsc → dist/
+bun dist/server/index.js
 ```
 
 ## Configuration
@@ -58,9 +67,9 @@ node dist/server/index.js
 ## Deploy
 
 ```bash
-# systemd example
+# systemd (Bun)
 sudo cp deploy/systemd/termw.service.example /etc/systemd/system/termw.service
-# edit User, WorkingDirectory=/opt/termw
+# edit User, WorkingDirectory=/opt/termw, ExecStart=/usr/local/bin/bun
 sudo systemctl enable --now termw
 ```
 

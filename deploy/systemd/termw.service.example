@@ -1,5 +1,5 @@
 [Unit]
-Description=termw — wterm + node-pty web terminal
+Description=termw — wterm + Bun web terminal
 After=network.target
 
 [Service]
@@ -7,14 +7,15 @@ Type=simple
 # Change User/WorkingDirectory to your deploy user — do NOT run as root if possible
 User=termw
 WorkingDirectory=/opt/termw
+# Optional: EnvironmentFile=/etc/termw/env
 Environment=HOST=127.0.0.1
 Environment=PORT=3000
 Environment=SHELL=/usr/bin/zsh
 Environment=HOME=/home/termw
 Environment=LANG=ko_KR.UTF-8
 Environment=LC_ALL=ko_KR.UTF-8
-Environment=NODE_ENV=production
-ExecStart=/usr/bin/node dist/server/index.js
+Environment=BUN_ENV=production
+ExecStart=/usr/local/bin/bun dist/server/index.js
 Restart=always
 RestartSec=2
 StandardOutput=journal

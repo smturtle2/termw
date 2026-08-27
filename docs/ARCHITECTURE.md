@@ -5,8 +5,8 @@ Clean contracts for `termw`. This doc holds the internal details that were previ
 ## Overview
 
 ```
-browser                  server                     pty
- WTerm ──WS text──►  index.ts / pty.ts  ──► node-pty ──► $SHELL -l
+browser                  server (Bun)               pty
+ WTerm ──WS text──►  index.ts (Bun.serve) ──► Bun.spawn ──► $SHELL -l
    │ fetch(/theme.json)   │ theme.ts/env.ts          │ COLORFGBG=0;15, THEME_*
    └─ OSC 10/11 drain ────┘                           └─ LANG=ko_KR.UTF-8
  vendor/wterm (Zig/WASM)
@@ -35,11 +35,11 @@ browser                  server                     pty
 - Client → Server: `"\x1b[RESIZE:cols;rows]"` (single frame) for initial + every `onResize`. Server `pty.ts:decodeResize()` validates 1..1024.
 - Server → Client: raw PTY bytes (incl. OSC). Frontend decodes `ArrayBuffer`/`Uint8Array`→string, then `wterm.write()`, then drains `bridge.getResponse()` loop (both `10;?` and `11;?`).
 
-## 3) PTY — `node-pty`
+## 3) PTY — `Bun.spawn`
 
-- `pty.spawn(SHELL -l, {name:"xterm-256color", cols, rows, cwd:HOME, env: buildPtyEnv(theme)})` — env allowlist only, `LANG=ko_KR.UTF-8` for `한` width=2 (AC00-D7A3).
-- Paths `WS_PATHS = ["/ws","/api/terminal","/ws/terminal"]` backward-compat, else `socket.destroy()`.
-- Upgrade in `src/server/index.ts`, static via `src/server/static.ts` (`MIME`, `../public`, `no-cache`, traversal guard).
+- `Bun.spawn([SHELL,"-l"], { cwd: HOME, env: buildPtyEnv(theme), terminal: { cols, rows, data(term,data){ ws.send(data) } } })` — env allowlist only, `LANG=ko_KR.UTF-8` for `한` width=2 (AC00-D7A3).
+- Paths `WS_PATHS = ["/ws","/api/terminal","/ws/terminal"]` backward-compat, else `400` on `server.upgrade` fail.
+- `Bun.serve` in `src/server/index.ts` handles `fetch` (static via `Bun.file`, `MIME`, `PUBLIC_DIR`, traversal guard) + `websocket: {open,message,close}` delegates to `pty.ts:ptyOpen/ptyMessage/ptyClose`.
 
 ## 4) IME — Korean
 
