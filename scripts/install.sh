@@ -222,6 +222,12 @@ else
           -e "s|Environment=HOME=.*|Environment=HOME=$HOME|" \
           -e "s|ExecStart=.*|ExecStart=$BUN_BIN dist/server/index.js|" \
           "$UNIT_SRC" > "$TMP_UNIT"
+      TERM_W_USER="$(grep '^User=' "$TMP_UNIT" | cut -d= -f2 | tr -d ' ')"
+      if ! id "$TERM_W_USER" >/dev/null 2>&1; then
+        warn "user $TERM_W_USER not found — using $(id -un) (HOME=$HOME)"
+        sed -i "s/^User=.*/User=$(id -un)/" "$TMP_UNIT"
+        sed -i "s|Environment=HOME=.*|Environment=HOME=$HOME|" "$TMP_UNIT"
+      fi
 
       if [[ -w "/etc/systemd/system" ]]; then
         cp "$TMP_UNIT" "$UNIT_DST"
