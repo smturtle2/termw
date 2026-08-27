@@ -61,6 +61,38 @@ const server = Bun.serve<{ sid: string }>({
       return new Response("ok", { headers: { "Content-Type": "text/plain" } });
     }
 
+    if (pathname === "/manifest.json") {
+      // PWA manifest rendered from theme.json so PWA chrome follows the
+      // terminal theme (background → theme_color/background_color).
+      try {
+        const theme = getTheme();
+        const manifest = {
+          name: "termw",
+          short_name: "termw",
+          description: "Fast web terminal — Bun, WASM, Korean IME",
+          start_url: "/",
+          scope: "/",
+          display: "standalone",
+          orientation: "portrait",
+          background_color: theme.background,
+          theme_color: theme.background,
+          icons: [
+            { src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+            { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
+            { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+          ],
+        };
+        return new Response(JSON.stringify(manifest), {
+          headers: {
+            "Content-Type": "application/manifest+json; charset=utf-8",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+          },
+        });
+      } catch {
+        return new Response("{}", { headers: { "Content-Type": "application/manifest+json" } });
+      }
+    }
+
     if (pathname === "/theme.json" || pathname === "/api/theme") {
       if (req.method === "GET") {
         try {

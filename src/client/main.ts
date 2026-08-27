@@ -74,6 +74,8 @@ function applyTheme(theme: Theme, wterm: WTerm) {
   el.style.setProperty("--term-cursor", theme.foreground);
   document.body.style.background = theme.background;
   document.body.style.color = theme.foreground;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", theme.background);
   try {
     const bg = parseInt(theme.background.replace("#", ""), 16);
     const fg = parseInt(theme.foreground.replace("#", ""), 16);
@@ -310,7 +312,7 @@ document.addEventListener(
       e.preventDefault();
       e.stopPropagation();
       if (e.key.toLowerCase() === "t") createTab();
-      else closeTab(currentTabId);
+      else if (currentTabId) closeTab(currentTabId);
     }
   },
   true,
@@ -375,3 +377,11 @@ async function init() {
 
 setupThemeUI();
 void init();
+
+// PWA — register service worker (needs secure context; both localhost and
+// the tailscale HTTPS origin qualify). Network-first, see public/sw.js.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch((e) => {
+    console.warn("service worker registration failed:", e);
+  });
+}
