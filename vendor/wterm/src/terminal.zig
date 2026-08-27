@@ -1148,6 +1148,37 @@ pub const Terminal = struct {
             self.enqueueResponse(resp);
             return;
         }
+        // OSC 4;idx;? query — opentui/opencode detectOSCSupport gate (needs at least 4;0;?)
+        // Reply with theme_bg fallback for any idx so palette detection passes; real palette not stored.
+        if (data.len >= 4 and data[0] == '4' and data[1] == ';') {
+            // must end with ";?" to be a query
+            if (data[data.len - 2] == ';' and data[data.len - 1] == '?') {
+                // parse idx between "4;" and ";?"
+                const idx_slice = data[2 .. data.len - 2];
+                // idx should be decimal 0..255, but we accept any and reply with theme_bg for 0, else same
+                var idx: u16 = 0;
+                var valid = idx_slice.len > 0;
+                for (idx_slice) |c| {
+                    if (c < '0' or c > '9') { valid = false; break; }
+                    idx = idx * 10 + (c - '0');
+                    if (idx > 255) { valid = false; break; }
+                }
+                if (valid) {
+                    var buf: [40]u8 = undefined;
+                    // use theme_bg for idx 0, otherwise theme_bg as fallback (real palette not stored)
+                    const r: u16 = @intCast((self.theme_bg >> 16) & 0xff);
+                    const g: u16 = @intCast((self.theme_bg >> 8) & 0xff);
+                    const b: u16 = @intCast(self.theme_bg & 0xff);
+                    const rr = r * 257;
+                    const gg = g * 257;
+                    const bb = b * 257;
+                    const term: []const u8 = if (self.parser.osc_terminated_by_st) "\x1b\\" else "\x07";
+                    const resp = std.fmt.bufPrint(&buf, "\x1b]4;{d};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}", .{ idx, rr, gg, bb, term }) catch return;
+                    self.enqueueResponse(resp);
+                    return;
+                }
+            }
+        }
 
         if ((data[0] == '0' or data[0] == '2') and data[1] == ';') {
             const title = data[2..];

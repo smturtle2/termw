@@ -1,6 +1,6 @@
 # Patches vs upstream vercel-labs/wterm (cdff1c0)
 
-This vendored copy includes 7 local patches required for Korean IME and server-driven theme.
+This vendored copy includes 8 local patches required for Korean IME and server-driven theme.
 
 Upstream: https://github.com/vercel-labs/wterm
 Base commit: cdff1c0 (fix(dom): preserve fractional autoscroll)
@@ -33,5 +33,8 @@ Base commit: cdff1c0 (fix(dom): preserve fractional autoscroll)
 
 ## 6. `packages/@wterm/dom/src/terminal.css` — composition visuals + light theme
 - `::selection` `#b4d5fe`, `.term-composition` absolute underline, `.wterm.theme-korean-light` `{#000,#fff,#000}`.
+
+## 7. `src/terminal.zig` — OSC 4;idx;? palette query replies
+- `handleOsc` answers `4;<idx>;?` with `rgb:RRRR/GGGG/BBBB` (`*257` expansion, terminator echo) using `theme_bg` as fallback for any idx. Some TUIs (e.g. opentui) gate their `OSC 11` luminance probe on an `ESC]4;0;?` reply; without it the probe is ignored and the TUI falls back to its built-in default.
 
 All patches are intentionally minimal and keep `Cell`/`Grid`/`hyperlink`/`unicode_width` contracts untouched. See git diff in `../wterm` for exact hunks.
