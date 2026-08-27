@@ -108,6 +108,34 @@ function bufferDrain(sess: Session): string {
   return sess.buffer.chunks.join("");
 }
 
+/** The OSC query scanner holds back the last ~64 bytes of every chunk as a
+ * tail (for reassembling queries split across chunks) and those bytes are not
+ * stored in the ring buffer. On detach they must be flushed, or the tail of
+ * the screen (last typed chars, prompt) silently disappears from the replay.
+ * Only query remnants are dropped: complete OSC 10/11/4 queries and DSR are
+ * stripped (a replay must never re-trigger client responses), an incomplete
+ * trailing OSC/DSR start is cut, and a bare ESC is dropped. Any other
+ * complete escape sequence is kept so the replay reconstructs the screen. */
+function flushTail(sess: Session) {
+  const t = sess.oscTail;
+  if (!t) return;
+  sess.oscTail = "";
+  let clean = t
+    .replace(/\x1b\](10|11|4;\d+);\?(?:\x07|\x1b\\)/g, "")
+    .replace(/\x1b\[6n/g, "");
+  const oscIdx = clean.lastIndexOf("\x1b]");
+  if (oscIdx !== -1 && !/(?:\x07|\x1b\\)/.test(clean.slice(oscIdx))) {
+    clean = clean.slice(0, oscIdx);
+  }
+  const csiIdx = clean.lastIndexOf("\x1b[");
+  if (csiIdx !== -1) {
+    const rest = clean.slice(csiIdx + 2);
+    if (rest === "" || rest === "6" || rest === "6n") clean = clean.slice(0, csiIdx);
+  }
+  if (clean.endsWith("\x1b")) clean = clean.slice(0, -1);
+  if (clean) bufferAppend(sess, clean);
+}
+
 function killSession(sess: Session, reason: string) {
   console.log(`[termw] session ${sess.id} kill (${reason})`);
   sessionsById.delete(sess.id);
@@ -249,6 +277,7 @@ function attach(ws: WS, sess: Session, opts: PtyOptions) {
   // Re-attach: replay ring buffer first (fresh client parser is empty), then
   // let live output flow. `attaching` keeps new PTY output out of the socket
   // until the replay is fully queued, preserving byte order.
+  flushTail(sess);
   sess.attaching = true;
   const replay = bufferDrain(sess);
   if (replay) safeSend(ws, replay);
@@ -328,6 +357,7 @@ export function ptyClose(ws: WS) {
   }
   // Detach: keep the PTY and its ring buffer alive so a reconnect (or another
   // device) re-attaches to the same session. Start the idle TTL.
+  flushTail(sess);
   sess.ws = null;
   sess.attaching = false;
   if (sess.proc) {

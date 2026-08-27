@@ -35,7 +35,7 @@
     }
     .tab-item {
       position: relative;
-      height: 150px;
+      height: auto;
       margin: 1px 6px;
       border-radius: 6px;
       cursor: pointer;
@@ -53,12 +53,12 @@
     }
     .tab-label {
       position: absolute;
-      top: 50%;
+      top: 8px;
       left: 50%;
       max-width: 104px;
       white-space: nowrap;
       overflow: hidden;
-      transform: translate(-50%, -50%) rotate(-90deg);
+      transform: translateX(-50%) rotate(-90deg);
       transform-origin: center;
     }
     .tab-close {
@@ -109,7 +109,6 @@
     }
     @media (max-width: 768px) {
       #tabbar { width: 48px; }
-      .tab-item { height: 60px; }
       .tab-label { max-width: 40px; }
       .tab-close { display: none; }
       #terminal {
