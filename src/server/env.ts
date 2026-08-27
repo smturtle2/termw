@@ -2,7 +2,7 @@ import type { Theme } from "../shared/theme.js";
 import { toColorFgbg } from "../shared/theme.js";
 
 /**
- * Build sanitized env for node-pty spawn.
+ * Build sanitized env for Bun.spawn terminal.
  * Contract: never pass process.env wholesale — only allowlisted keys.
  * Theme drives COLORFGBG + THEME_* so PTY and any TUI (opencode) see luminance-consistent values.
  */
