@@ -240,10 +240,18 @@ else
         if [[ -w "/etc/systemd/system" ]]; then
           systemctl daemon-reload
           systemctl enable --now termw || warn "systemctl enable failed — try: sudo systemctl enable --now termw"
+          # On update, enable --now is a no-op for an already-running unit;
+          # restart so the freshly built code actually takes effect.
+          if systemctl is-active --quiet termw; then
+            systemctl restart termw
+          fi
           systemctl status termw --no-pager -l 2>&1 | head -20 || true
         else
           sudo systemctl daemon-reload
           sudo systemctl enable --now termw || warn "systemctl enable failed"
+          if systemctl is-active --quiet termw; then
+            sudo systemctl restart termw
+          fi
           sudo systemctl status termw --no-pager -l 2>&1 | head -20 || true
         fi
       fi
